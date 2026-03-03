@@ -20,6 +20,10 @@ export class WhatsAppBotService {
     (message: Message, args: string[]) => Promise<void>
   > = new Map();
 
+  private schedules = new Map<string, NodeJS.Timeout>();
+  private autoReplies = new Map<string, string>();
+  private templates = new Map<string, string>();
+
   constructor() {
     this.registerCommands();
     whatsappService.onMessage((message) => this.handleMessage(message));
@@ -50,6 +54,11 @@ export class WhatsAppBotService {
         return;
       }
 
+      if (this.autoReplies.size > 0) {
+        const replied = await this.handleAutoReply(message);
+        if (replied) return;
+      }
+
       if (!from.endsWith("@g.us") && !message.isStatus) {
         log.bot(`routing to handleForwardToGroup | from: ${from}`);
         await this.handleForwardToGroup(message);
@@ -70,14 +79,40 @@ export class WhatsAppBotService {
     const commandName = cmd.toLowerCase();
     const commandHandler = this.commands.get(commandName);
 
+    const contact = await message.getContact();
+    const senderName = contact.pushname || contact.name || contact.number || message.from;
+    const senderNumber = contact.number || contact.id.user || message.from;
+
     if (commandHandler) {
       log.cmd(`executing command | cmd: ${commandName} | args: [${args.join(", ")}] | from: ${message.from}`);
       try {
         await commandHandler(message, args);
         log.cmd(`command done | cmd: ${commandName}`);
+
+        if (this.whatsappRedirectGroupId) {
+          await whatsappService.sendMessage(
+            this.whatsappRedirectGroupId,
+            `🤖 *Command Dijalankan*\n\n` +
+            `👤 Dari   : ${senderName}\n` +
+            `📱 Nomor  : +${senderNumber}\n` +
+            `⚡ Command: \`${body.slice(0, 100)}\`\n` +
+            `✅ Status : Berhasil`
+          );
+        }
       } catch (err) {
         log.error(`command error | cmd: ${commandName} | from: ${message.from} | error:`, err);
         await message.reply("Terjadi kesalahan saat menjalankan perintah.");
+
+        if (this.whatsappRedirectGroupId) {
+          await whatsappService.sendMessage(
+            this.whatsappRedirectGroupId,
+            `🤖 *Command Gagal*\n\n` +
+            `👤 Dari   : ${senderName}\n` +
+            `📱 Nomor  : +${senderNumber}\n` +
+            `⚡ Command: \`${body.slice(0, 100)}\`\n` +
+            `❌ Error  : ${String(err).slice(0, 200)}`
+          );
+        }
       }
     } else {
       log.warn(`unknown command | cmd: ${commandName} | from: ${message.from}`);
@@ -827,6 +862,583 @@ export class WhatsAppBotService {
       }
     });
 
+    this.commands.set("add", async (message, args) => {
+      log.cmd(`add | from: ${message.from} | args: [${args.join(", ")}]`);
+
+      if (args.length < 2) {
+        await message.reply(
+          "*Usage:*\n`!add [groupId] [nomor1,nomor2]`\n\n" +
+          "*Contoh:*\n`!add 1234567890@g.us 6281234,6285678`"
+        );
+        return;
+      }
+
+      const groupId = args[0].trim();
+      const numbers = args[1].split(",").map(n => this.toContactId(n.trim())).filter(Boolean);
+
+      if (!groupId.endsWith("@g.us")) {
+        await message.reply("Group ID harus diakhiri `@g.us`.");
+        return;
+      }
+
+      if (numbers.length === 0) {
+        await message.reply("Tidak ada nomor valid.");
+        return;
+      }
+
+      try {
+        const { chat } = await this.ensureBotIsAdmin(groupId);
+
+        log.bot(`add: adding ${numbers.length} member(s) to ${groupId}`);
+        const result = await chat.addParticipants(numbers);
+
+        // result: { [id]: { code, message } }
+        const success: string[] = [];
+        const failed: string[] = [];
+
+        for (const [id, res] of Object.entries(result as any)) {
+          const code = (res as any)?.code ?? (res as any)?.status;
+          if (code === 200 || code === "200") success.push(id);
+          else failed.push(`${id} (code: ${code})`);
+        }
+
+        await message.reply(
+          `*Tambah Member Selesai*\n\n` +
+          `Group   : ${chat.name}\n` +
+          `Berhasil: *${success.length}*\n` +
+          `Gagal   : *${failed.length}*\n\n` +
+          (failed.length > 0 ? `*Gagal:*\n${failed.map(f => `• ${f}`).join("\n")}` : "🎉 Semua berhasil!")
+        );
+
+      } catch (err: any) {
+        log.error(`add failed | group: ${groupId} | error:`, err);
+        await message.reply(`Gagal tambah member.\n_${err.message}_`);
+      }
+
+      log.cmd(`add done | group: ${groupId}`);
+    });
+
+    this.commands.set("kick", async (message, args) => {
+      log.cmd(`kick | from: ${message.from} | args: [${args.join(", ")}]`);
+
+      if (args.length < 2) {
+        await message.reply(
+          "*Usage:*\n`!kick [groupId] [nomor1,nomor2]`\n\n" +
+          "*Contoh:*\n`!kick 1234567890@g.us 6281234,6285678`"
+        );
+        return;
+      }
+
+      const groupId = args[0].trim();
+      const numbers = args[1].split(",").map(n => this.toContactId(n.trim())).filter(Boolean);
+
+      if (!groupId.endsWith("@g.us")) {
+        await message.reply("Group ID harus diakhiri `@g.us`.");
+        return;
+      }
+
+      try {
+        const { chat, botId } = await this.ensureBotIsAdmin(groupId);
+
+        // Cegah kick diri sendiri
+        const filtered = numbers.filter(n => n !== botId);
+        if (filtered.length === 0) {
+          await message.reply("Tidak bisa kick bot itu sendiri.");
+          return;
+        }
+
+        // Cegah kick sesama admin
+        const adminIds = chat.participants
+          ?.filter((p: any) => p.isAdmin || p.isSuperAdmin)
+          .map((p: any) => p.id._serialized) ?? [];
+
+        const toKick = filtered.filter(n => !adminIds.includes(n));
+        const skippedAdmin = filtered.filter(n => adminIds.includes(n));
+
+        if (toKick.length === 0) {
+          await message.reply("Semua target adalah admin, tidak bisa di-kick.");
+          return;
+        }
+
+        log.bot(`kick: removing ${toKick.length} member(s) from ${groupId}`);
+        await chat.removeParticipants(toKick);
+
+        await message.reply(
+          `*Kick Member Selesai*\n\n` +
+          `Group    : ${chat.name}\n` +
+          `Di-kick  : *${toKick.length}*\n` +
+          (skippedAdmin.length > 0
+            ? `Skip admin: ${skippedAdmin.map(n => `• ${n}`).join("\n")}`
+            : "")
+        );
+
+      } catch (err: any) {
+        log.error(`kick failed | group: ${groupId} | error:`, err);
+        await message.reply(`Gagal kick member.\n_${err.message}_`);
+      }
+
+      log.cmd(`kick done | group: ${groupId}`);
+    });
+
+    this.commands.set("promote", async (message, args) => {
+      log.cmd(`promote | from: ${message.from} | args: [${args.join(", ")}]`);
+
+      if (args.length < 2) {
+        await message.reply(
+          "*Usage:*\n`!promote [groupId] [nomor1,nomor2]`\n\n" +
+          "*Contoh:*\n`!promote 1234567890@g.us 6281234`"
+        );
+        return;
+      }
+
+      const groupId = args[0].trim();
+      const numbers = args[1].split(",").map(n => this.toContactId(n.trim())).filter(Boolean);
+
+      if (!groupId.endsWith("@g.us")) {
+        await message.reply("Group ID harus diakhiri `@g.us`.");
+        return;
+      }
+
+      try {
+        const { chat } = await this.ensureBotIsAdmin(groupId);
+
+        // Cek apakah target adalah member group
+        const memberIds = chat.participants?.map((p: any) => p.id._serialized) ?? [];
+        const valid = numbers.filter(n => memberIds.includes(n));
+        const invalid = numbers.filter(n => !memberIds.includes(n));
+
+        if (valid.length === 0) {
+          await message.reply("Tidak ada target yang merupakan member group.");
+          return;
+        }
+
+        log.bot(`promote: promoting ${valid.length} member(s) in ${groupId}`);
+        await chat.promoteParticipants(valid);
+
+        await message.reply(
+          `*Promote Admin Selesai*\n\n` +
+          `Group     : ${chat.name}\n` +
+          `Dipromote : *${valid.length}*\n` +
+          (invalid.length > 0
+            ? `Bukan member:\n${invalid.map(n => `• ${n}`).join("\n")}`
+            : "Semua berhasil!")
+        );
+
+      } catch (err: any) {
+        log.error(`promote failed | group: ${groupId} | error:`, err);
+        await message.reply(`Gagal promote member.\n_${err.message}_`);
+      }
+
+      log.cmd(`promote done | group: ${groupId}`);
+    });
+
+    this.commands.set("demote", async (message, args) => {
+      log.cmd(`demote | from: ${message.from} | args: [${args.join(", ")}]`);
+
+      if (args.length < 2) {
+        await message.reply(
+          "*Usage:*\n`!demote [groupId] [nomor1,nomor2]`\n\n" +
+          "*Contoh:*\n`!demote 1234567890@g.us 6281234`"
+        );
+        return;
+      }
+
+      const groupId = args[0].trim();
+      const numbers = args[1].split(",").map(n => this.toContactId(n.trim())).filter(Boolean);
+
+      if (!groupId.endsWith("@g.us")) {
+        await message.reply("Group ID harus diakhiri `@g.us`.");
+        return;
+      }
+
+      try {
+        const { chat, botId } = await this.ensureBotIsAdmin(groupId);
+
+        // Cegah demote diri sendiri
+        const filtered = numbers.filter(n => n !== botId);
+        if (filtered.length === 0) {
+          await message.reply("Tidak bisa demote bot itu sendiri.");
+          return;
+        }
+
+        // Pastikan target adalah admin
+        const adminIds = chat.participants
+          ?.filter((p: any) => p.isAdmin || p.isSuperAdmin)
+          .map((p: any) => p.id._serialized) ?? [];
+
+        const todemote = filtered.filter(n => adminIds.includes(n));
+        const notAdmin = filtered.filter(n => !adminIds.includes(n));
+        const superAdmins = filtered.filter(n =>
+          chat.participants?.find((p: any) => p.id._serialized === n)?.isSuperAdmin
+        );
+
+        if (todemote.length === 0) {
+          await message.reply("Tidak ada target yang merupakan admin.");
+          return;
+        }
+
+        if (superAdmins.length > 0) {
+          await message.reply(
+            `⚠ *Tidak bisa demote super admin:*\n` +
+            `${superAdmins.map(n => `• ${n}`).join("\n")}`
+          );
+          return;
+        }
+
+        log.bot(`demote: demoting ${todemote.length} admin(s) in ${groupId}`);
+        await chat.demoteParticipants(todemote);
+
+        await message.reply(
+          `*Demote Admin Selesai*\n\n` +
+          `Group    : ${chat.name}\n` +
+          `Di-demote: *${todemote.length}*\n` +
+          (notAdmin.length > 0
+            ? `Bukan admin:\n${notAdmin.map(n => `• ${n}`).join("\n")}`
+            : "Semua berhasil!")
+        );
+
+      } catch (err: any) {
+        log.error(`demote failed | group: ${groupId} | error:`, err);
+        await message.reply(`Gagal demote admin.\n_${err.message}_`);
+      }
+
+      log.cmd(`demote done | group: ${groupId}`);
+    });
+
+    this.commands.set("schedule", async (message, args) => {
+      log.cmd(`schedule | from: ${message.from} | args: [${args.join(", ")}]`);
+
+      const sub = args[0]?.toLowerCase();
+
+      // ── List ─────────────────────────────────────────────────────────
+      if (sub === "list") {
+        if (this.schedules.size === 0) {
+          await message.reply("📭 Tidak ada jadwal aktif.");
+          return;
+        }
+        const lines = Array.from(this.schedules.keys()).map((id, i) => `${i + 1}. \`${id}\``);
+        await message.reply(`📅 *Jadwal Aktif (${this.schedules.size})*\n\n${lines.join("\n")}`);
+        return;
+      }
+
+      // ── Cancel ───────────────────────────────────────────────────────
+      if (sub === "cancel") {
+        const id = args[1]?.trim();
+        if (!id) { await message.reply("Usage: `!schedule cancel [id]`"); return; }
+
+        const timeout = this.schedules.get(id);
+        if (!timeout) { await message.reply(`Jadwal \`${id}\` tidak ditemukan.`); return; }
+
+        clearTimeout(timeout);
+        this.schedules.delete(id);
+        await message.reply(`Jadwal \`${id}\` dibatalkan.`);
+        log.bot(`schedule cancelled | id: ${id}`);
+        return;
+      }
+
+      // ── Add ──────────────────────────────────────────────────────────
+      if (sub === "add") {
+        // !schedule add [id] [target] [waktu] [pesan...]
+        if (args.length < 5) {
+          await message.reply(
+            "*Usage:*\n\n" +
+            "• Waktu spesifik (HH:MM):\n" +
+            "  `!schedule add myid 6281234@c.us 14:30 Halo!`\n\n" +
+            "• Delay relatif:\n" +
+            "  `!schedule add myid 6281234@c.us 30m Halo!`\n" +
+            "  `!schedule add myid 6281234@c.us 2h Halo!`\n" +
+            "  `!schedule add myid 6281234@c.us 1d Halo!`\n\n" +
+            "• Lihat jadwal: `!schedule list`\n" +
+            "• Batalkan    : `!schedule cancel [id]`"
+          );
+          return;
+        }
+
+        const id = args[1].trim();
+        const target = args[2].trim();
+        const timeArg = args[3].trim();
+        const text = args.slice(4).join(" ");
+
+        if (this.schedules.has(id)) {
+          await message.reply(`ID \`${id}\` sudah ada. Gunakan ID lain atau cancel dulu.`);
+          return;
+        }
+
+        // Parse waktu
+        let delayMs = 0;
+        const delayMatch = timeArg.match(/^(\d+)(m|h|d)$/i);
+
+        if (delayMatch) {
+          // Delay relatif: 30m, 2h, 1d
+          const val = parseInt(delayMatch[1]);
+          const unit = delayMatch[2].toLowerCase();
+          delayMs = unit === "m" ? val * 60_000
+            : unit === "h" ? val * 3_600_000
+              : val * 86_400_000;
+        } else if (/^\d{2}:\d{2}$/.test(timeArg)) {
+          // Waktu spesifik: 14:30
+          const [hh, mm] = timeArg.split(":").map(Number);
+          const now = new Date();
+          const target_ = new Date(now);
+          target_.setHours(hh, mm, 0, 0);
+          if (target_ <= now) target_.setDate(target_.getDate() + 1); // besok
+          delayMs = target_.getTime() - now.getTime();
+        } else {
+          await message.reply("Format waktu tidak valid.\nGunakan `HH:MM` atau `30m` / `2h` / `1d`.");
+          return;
+        }
+
+        const sendAt = new Date(Date.now() + delayMs);
+        const label = sendAt.toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+
+        const timeout = setTimeout(async () => {
+          try {
+            await whatsappService.sendMessage(target, text);
+            log.send(`schedule fired | id: ${id} | to: ${target}`);
+            this.schedules.delete(id);
+
+            if (this.whatsappRedirectGroupId) {
+              await whatsappService.sendMessage(
+                this.whatsappRedirectGroupId,
+                `📅 *Pesan Terjadwal Terkirim*\n\n` +
+                `🆔 ID    : ${id}\n` +
+                `📤 Ke    : ${target}\n` +
+                `💬 Pesan : ${text.slice(0, 100)}`
+              );
+            }
+          } catch (err) {
+            log.error(`schedule fire failed | id: ${id} | error:`, err);
+          }
+        }, delayMs);
+
+        this.schedules.set(id, timeout);
+
+        await message.reply(
+          `✅ *Jadwal Dibuat*\n\n` +
+          `🆔 ID    : ${id}\n` +
+          `📤 Ke    : ${target}\n` +
+          `⏰ Waktu : ${label} WIB\n` +
+          `💬 Pesan : ${text.slice(0, 80)}`
+        );
+
+        log.cmd(`schedule set | id: ${id} | target: ${target} | delay: ${delayMs}ms`);
+        return;
+      }
+
+      await message.reply(
+        "*Sub-command:*\n" +
+        "• `!schedule add [id] [target] [waktu] [pesan]`\n" +
+        "• `!schedule list`\n" +
+        "• `!schedule cancel [id]`"
+      );
+    });
+
+    // Usage:
+    //   !autoreply add [keyword] | [balasan]
+    //   !autoreply list
+    //   !autoreply delete [keyword]
+    //   !autoreply clear
+    // ─────────────────────────────────────────────────────────────────────────
+    this.commands.set("autoreply", async (message, args) => {
+      log.cmd(`autoreply | from: ${message.from} | args: [${args.join(", ")}]`);
+
+      const sub = args[0]?.toLowerCase();
+
+      // ── List ─────────────────────────────────────────────────────────
+      if (sub === "list") {
+        if (this.autoReplies.size === 0) {
+          await message.reply("📭 Tidak ada auto reply aktif.");
+          return;
+        }
+        const lines = Array.from(this.autoReplies.entries()).map(
+          ([kw, rep], i) => `*${i + 1}. "${kw}"*\n↩ ${rep.slice(0, 60)}${rep.length > 60 ? "..." : ""}`
+        );
+        await message.reply(`🤖 *Auto Reply (${this.autoReplies.size})*\n\n${lines.join("\n\n")}`);
+        return;
+      }
+
+      // ── Delete ───────────────────────────────────────────────────────
+      if (sub === "delete") {
+        const keyword = args.slice(1).join(" ").trim();
+        if (!keyword) { await message.reply("Usage: `!autoreply delete [keyword]`"); return; }
+
+        if (!this.autoReplies.has(keyword)) {
+          await message.reply(`Keyword "${keyword}" tidak ditemukan.`);
+          return;
+        }
+        this.autoReplies.delete(keyword);
+        await message.reply(`Auto reply "${keyword}" dihapus.`);
+        return;
+      }
+
+      // ── Clear ────────────────────────────────────────────────────────
+      if (sub === "clear") {
+        this.autoReplies.clear();
+        await message.reply("Semua auto reply dihapus.");
+        return;
+      }
+
+      // ── Add ──────────────────────────────────────────────────────────
+      if (sub === "add") {
+        const fullText = args.slice(1).join(" ");
+        const sepIdx = fullText.indexOf("|");
+
+        if (sepIdx === -1) {
+          await message.reply(
+            "*Usage:*\n`!autoreply add [keyword] | [balasan]`\n\n" +
+            "*Contoh:*\n`!autoreply add halo | Halo juga! Ada yang bisa dibantu?`\n" +
+            "`!autoreply add jam buka | Kami buka Senin-Jumat 09.00-17.00 WIB`"
+          );
+          return;
+        }
+
+        const keyword = fullText.slice(0, sepIdx).trim().toLowerCase();
+        const reply = fullText.slice(sepIdx + 1).trim();
+
+        if (!keyword || !reply) {
+          await message.reply("Keyword dan balasan tidak boleh kosong.");
+          return;
+        }
+
+        this.autoReplies.set(keyword, reply);
+        await message.reply(
+          `✅ *Auto Reply Ditambahkan*\n\n` +
+          `🔑 Keyword : "${keyword}"\n` +
+          `↩ Balasan : ${reply.slice(0, 100)}`
+        );
+
+        log.bot(`autoreply added | keyword: "${keyword}"`);
+        return;
+      }
+
+      await message.reply(
+        "*Sub-command:*\n" +
+        "• `!autoreply add [keyword] | [balasan]`\n" +
+        "• `!autoreply list`\n" +
+        "• `!autoreply delete [keyword]`\n" +
+        "• `!autoreply clear`"
+      );
+    });
+
+    this.commands.set("template", async (message, args) => {
+      log.cmd(`template | from: ${message.from} | args: [${args.join(", ")}]`);
+
+      const sub = args[0]?.toLowerCase();
+
+      // ── List ─────────────────────────────────────────────────────────
+      if (sub === "list") {
+        if (this.templates.size === 0) {
+          await message.reply("Tidak ada template tersimpan.");
+          return;
+        }
+        const lines = Array.from(this.templates.keys()).map(
+          (name, i) => `${i + 1}. \`${name}\``
+        );
+        await message.reply(`*Template (${this.templates.size})*\n\n${lines.join("\n")}`);
+        return;
+      }
+
+      // ── Show ─────────────────────────────────────────────────────────
+      if (sub === "show") {
+        const name = args[1]?.trim();
+        if (!name) { await message.reply("Usage: `!template show [nama]`"); return; }
+
+        const content = this.templates.get(name);
+        if (!content) { await message.reply(`Template \`${name}\` tidak ditemukan.`); return; }
+
+        await message.reply(`*Template: ${name}*\n\n${content}`);
+        return;
+      }
+
+      // ── Delete ───────────────────────────────────────────────────────
+      if (sub === "delete") {
+        const name = args[1]?.trim();
+        if (!name) { await message.reply("Usage: `!template delete [nama]`"); return; }
+
+        if (!this.templates.has(name)) {
+          await message.reply(`Template \`${name}\` tidak ditemukan.`);
+          return;
+        }
+        this.templates.delete(name);
+        await message.reply(`Template \`${name}\` dihapus.`);
+        return;
+      }
+
+      // ── Send ─────────────────────────────────────────────────────────
+      if (sub === "send") {
+        // !template send [nama] [target1,target2,...]
+        if (args.length < 3) {
+          await message.reply("Usage: `!template send [nama] [target1,target2]`");
+          return;
+        }
+
+        const name = args[1].trim();
+        const content = this.templates.get(name);
+
+        if (!content) { await message.reply(`Template \`${name}\` tidak ditemukan.`); return; }
+
+        const targets = args[2].split(",").map(t => t.trim()).filter(Boolean);
+
+        await message.reply(`Mengirim template \`${name}\` ke *${targets.length}* target...`);
+
+        const { success, failed } = await whatsappService.broadcast(targets, content);
+
+        await message.reply(
+          `✅ *Template Terkirim*\n\n` +
+          `📋 Template : \`${name}\`\n` +
+          `✔ Berhasil : *${success.length}*\n` +
+          `✘ Gagal    : *${failed.length}*`
+        );
+
+        log.cmd(`template send done | name: ${name} | success: ${success.length} | failed: ${failed.length}`);
+        return;
+      }
+
+      // ── Add ──────────────────────────────────────────────────────────
+      if (sub === "add") {
+        const fullText = args.slice(1).join(" ");
+        const sepIdx = fullText.indexOf("|");
+
+        if (sepIdx === -1) {
+          await message.reply(
+            "*Usage:*\n`!template add [nama] | [isi pesan]`\n\n" +
+            "*Contoh:*\n" +
+            "`!template add promo | 🎉 Promo hari ini diskon 50%! Buruan order!`\n" +
+            "`!template add welcome | Halo! Selamat datang, ada yang bisa kami bantu?`"
+          );
+          return;
+        }
+
+        const name = fullText.slice(0, sepIdx).trim().toLowerCase();
+        const content = fullText.slice(sepIdx + 1).trim();
+
+        if (!name || !content) {
+          await message.reply("Nama dan isi template tidak boleh kosong.");
+          return;
+        }
+
+        this.templates.set(name, content);
+        await message.reply(
+          `✅ *Template Disimpan*\n\n` +
+          `📋 Nama  : \`${name}\`\n` +
+          `💬 Isi   : ${content.slice(0, 100)}${content.length > 100 ? "..." : ""}\n\n` +
+          `Kirim dengan: \`!template send ${name} [target]\``
+        );
+
+        log.bot(`template added | name: "${name}"`);
+        return;
+      }
+
+      await message.reply(
+        "*Sub-command:*\n" +
+        "• `!template add [nama] | [isi]`\n" +
+        "• `!template list`\n" +
+        "• `!template show [nama]`\n" +
+        "• `!template send [nama] [target1,target2]`\n" +
+        "• `!template delete [nama]`"
+      );
+    });
+
     log.bot(`commands registered | total: ${this.commands.size} | list: [${Array.from(this.commands.keys()).join(", ")}]`);
   }
 
@@ -847,5 +1459,42 @@ export class WhatsAppBotService {
       this.whatsappRedirectGroupId!,
       this.buildSenderHeader(senderName, senderNumber, type),
     );
+  }
+  private async handleAutoReply(message: Message): Promise<boolean> {
+    if (!message.body || message.from.endsWith("@g.us") || message.isStatus) return false;
+
+    const body = message.body.toLowerCase().trim();
+
+    for (const [keyword, reply] of this.autoReplies.entries()) {
+      const pattern = keyword.toLowerCase();
+      const matched = body === pattern || body.includes(pattern);
+
+      if (matched) {
+        log.bot(`auto-reply match | keyword: "${keyword}" | from: ${message.from}`);
+        await message.reply(reply);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private async ensureBotIsAdmin(groupId: string): Promise<{ chat: any; botId: string }> {
+    const chat = await whatsappService.getChatById(groupId) as any;
+
+    if (!chat.isGroup) throw new Error("Bukan group chat.");
+
+    const botId = `${whatsappService.botNumber}@c.us`;
+    const botPart = chat.participants?.find((p: any) => p.id._serialized === botId);
+
+    if (!botPart) throw new Error("Bot bukan anggota group ini.");
+    if (!botPart.isAdmin) throw new Error("Bot bukan admin di group ini.");
+
+    return { chat, botId };
+  }
+
+  private toContactId(raw: string): string {
+    if (raw.endsWith("@c.us")) return raw;
+    return `${raw.replace(/\D/g, "")}@c.us`;
   }
 }
