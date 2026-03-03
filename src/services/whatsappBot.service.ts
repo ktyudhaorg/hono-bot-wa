@@ -92,11 +92,11 @@ export class WhatsAppBotService {
         if (this.whatsappRedirectGroupId) {
           await whatsappService.sendMessage(
             this.whatsappRedirectGroupId,
-            `🤖 *Command Dijalankan*\n\n` +
-            `👤 Dari   : ${senderName}\n` +
-            `📱 Nomor  : +${senderNumber}\n` +
-            `⚡ Command: \`${body.slice(0, 100)}\`\n` +
-            `✅ Status : Berhasil`
+            `*Command Dijalankan*\n\n` +
+            `Dari   : ${senderName}\n` +
+            `Nomor  : +${senderNumber}\n` +
+            `Command: \`${body.slice(0, 100)}\`\n` +
+            `Status : Berhasil`
           );
         }
       } catch (err) {
@@ -106,11 +106,11 @@ export class WhatsAppBotService {
         if (this.whatsappRedirectGroupId) {
           await whatsappService.sendMessage(
             this.whatsappRedirectGroupId,
-            `🤖 *Command Gagal*\n\n` +
-            `👤 Dari   : ${senderName}\n` +
-            `📱 Nomor  : +${senderNumber}\n` +
-            `⚡ Command: \`${body.slice(0, 100)}\`\n` +
-            `❌ Error  : ${String(err).slice(0, 200)}`
+            `*Command Gagal*\n\n` +
+            `Dari   : ${senderName}\n` +
+            `Nomor  : +${senderNumber}\n` +
+            `Command: \`${body.slice(0, 100)}\`\n` +
+            `Error  : ${String(err).slice(0, 200)}`
           );
         }
       }

@@ -130,8 +130,22 @@ export class WhatsAppService {
 
   public async sendMessage(to: string, content: any, options?: any): Promise<any> {
     if (!this.isReady) throw new Error("WhatsApp client: not ready");
-    log.send(`sendMessage | to: ${to}`);
-    return this.client.sendMessage(to, content, options);
+    try {
+      const numberId = await this.client.getNumberId(to.replace("@c.us", ""));
+      if (!numberId) {
+        throw new Error(`Nomor ${to} tidak terdaftar di WhatsApp`);
+      }
+
+      const resolvedId = numberId._serialized;
+      log.send(`sendMessage | to: ${resolvedId}`);
+      return this.client.sendMessage(resolvedId, content, options);
+
+    } catch (err: any) {
+      if (to.endsWith("@g.us")) {
+        return this.client.sendMessage(to, content, options);
+      }
+      throw err;
+    }
   }
 
   public async sendChatMessage(to: string, message: string): Promise<void> {
@@ -436,11 +450,18 @@ export class WhatsAppService {
     const extGroup = "@g.us";
     const extChat = "@c.us";
 
-    if (target.endsWith(extChat) || target.endsWith(extGroup)) return target;
-    if (!isGroup) return formatPhoneNumber(target) + extChat;
-    if (isGroup) return target + extGroup;
+    if (target.endsWith(extGroup)) return target;
+    if (isGroup) return `${target}${extGroup}`;
+    const rawNumber = target.replace(extChat, "");
 
-    return `${target}`;
+    try {
+      const numberId = await this.client.getNumberId(rawNumber);
+      if (numberId) return numberId._serialized;
+    } catch {
+      log.warn(`getNumberId failed | number: ${rawNumber}, fallback ke format manual`);
+    }
+
+    return `${rawNumber}${extChat}`;
   }
 
   private validateWhatsAppId(target: string) {
