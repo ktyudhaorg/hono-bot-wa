@@ -1206,8 +1206,12 @@ export class WhatsAppBotService {
                 `💬 Pesan : ${text.slice(0, 100)}`
               );
             }
-          } catch (err) {
-            log.error(`schedule fire failed | id: ${id} | error:`, err);
+          } catch (err: any) {
+            log.error(`schedule fire failed | id: ${id} | target: ${target}`, {
+              message: err?.message ?? String(err),
+              stack: err?.stack ?? "-",
+              name: err?.name ?? "-",
+            });
           }
         }, delayMs);
 
