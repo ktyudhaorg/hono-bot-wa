@@ -638,17 +638,17 @@ export class WhatsAppBotService {
             : `${targets.length} target`;
 
       await message.reply(
-        `⏳ *Broadcast Dimulai*\n\n` +
-        `📢 Target : *${targetLabel}*\n` +
-        `💬 Pesan  : "${broadcastMsg.slice(0, 60)}${broadcastMsg.length > 60 ? "..." : ""}"`
+        `*Broadcast Dimulai*\n\n` +
+        `Target : *${targetLabel}*\n` +
+        `Pesan  : "${broadcastMsg.slice(0, 60)}${broadcastMsg.length > 60 ? "..." : ""}"`
       );
 
       const { success, failed } = await whatsappService.broadcast(targets, broadcastMsg);
 
       await message.reply(
-        `✅ *Broadcast Selesai*\n\n` +
-        `✔ Berhasil: *${success.length}*\n` +
-        `✘ Gagal   : *${failed.length}*\n\n` +
+        `*Broadcast Selesai*\n\n` +
+        `Berhasil: *${success.length}*\n` +
+        `Gagal   : *${failed.length}*\n\n` +
         (failed.length > 0
           ? `*Gagal ke:*\n${failed.map(id => `• ${id}`).join("\n")}`
           : "🎉 Semua berhasil!")
@@ -671,13 +671,13 @@ export class WhatsAppBotService {
       const mbTotal = (memUsage.heapTotal / 1024 / 1024).toFixed(1);
 
       await message.reply(
-        `🤖 *Status Bot*\n\n` +
-        `🟢 Ready       : ${status.isReady ? "Ya" : "Tidak"}\n` +
-        `🔐 Authenticated: ${status.isAuthenticated ? "Ya" : "Tidak"}\n` +
-        `📱 Nomor Bot   : ${whatsappService.botNumber ?? "-"}\n\n` +
-        `⏱ Uptime      : ${hours}j ${minutes}m ${seconds}d\n` +
-        `💾 Memory      : ${mbUsed} / ${mbTotal} MB\n` +
-        `📦 Node.js     : ${process.version}`
+        `*Status Bot*\n\n` +
+        `Ready       : ${status.isReady ? "Ya" : "Tidak"}\n` +
+        `Authenticated: ${status.isAuthenticated ? "Ya" : "Tidak"}\n` +
+        `Nomor Bot   : ${whatsappService.botNumber ?? "-"}\n\n` +
+        `Uptime      : ${hours}j ${minutes}m ${seconds}d\n` +
+        `Memory      : ${mbUsed} / ${mbTotal} MB\n` +
+        `Node.js     : ${process.version}`
       );
 
       log.cmd(`status done | isReady: ${status.isReady}`);
@@ -701,20 +701,20 @@ export class WhatsAppBotService {
           const chat = await whatsappService.getChatById(groupId) as any;
 
           await message.reply(
-            `👥 *Info Group*\n\n` +
-            `📌 Nama      : ${chat.name}\n` +
-            `🆔 ID        : ${chat.id._serialized}\n` +
-            `👤 Members   : ${chat.participants?.length ?? "-"}\n` +
-            `📝 Deskripsi : ${chat.description || "-"}\n` +
-            `🔒 Only Admin: ${chat.groupMetadata?.announce ? "Ya" : "Tidak"}\n` +
-            `📅 Dibuat    : ${chat.groupMetadata?.creation
+            `*Info Group*\n\n` +
+            `Nama      : ${chat.name}\n` +
+            `ID        : ${chat.id._serialized}\n` +
+            `Members   : ${chat.participants?.length ?? "-"}\n` +
+            `Deskripsi : ${chat.description || "-"}\n` +
+            `Only Admin: ${chat.groupMetadata?.announce ? "Ya" : "Tidak"}\n` +
+            `Dibuat    : ${chat.groupMetadata?.creation
               ? new Date(chat.groupMetadata.creation * 1000).toLocaleString("id-ID")
               : "-"
             }`
           );
         } catch (err) {
           log.error(`info group failed | id: ${groupId} | error:`, err);
-          await message.reply(`❌ Gagal ambil info group: ${groupId}`);
+          await message.reply(`Gagal ambil info group: ${groupId}`);
         }
         return;
       }
@@ -745,7 +745,7 @@ export class WhatsAppBotService {
         }
 
         if (!contact) {
-          await message.reply(`❌ Kontak tidak ditemukan.`);
+          await message.reply(`Kontak tidak ditemukan.`);
           return;
         }
 
@@ -768,13 +768,13 @@ export class WhatsAppBotService {
         const about = contact.statusMute ?? null; // profile bio jika ada
 
         await message.reply(
-          `👤 *Info Kontak*\n\n` +
-          `📛 Nama      : ${contact.pushname || contact.name || "-"}\n` +
-          `📱 Nomor     : +${contact.number || target}\n` +
-          `🆔 ID        : ${contact.id?._serialized ?? `${target}@c.us`}\n` +
-          `✅ Di WA     : ${isRegistered === true ? "Ya" : isRegistered === false ? "Tidak" : "-"}\n` +
-          `💼 Bisnis    : ${isBusiness ? "Ya" : "Tidak"}\n` +
-          `🚫 Diblokir  : ${isBlocked ? "Ya" : "Tidak"}`
+          `*Info Kontak*\n\n` +
+          `Nama      : ${contact.pushname || contact.name || "-"}\n` +
+          `Nomor     : +${contact.number || target}\n` +
+          `ID        : ${contact.id?._serialized ?? `${target}@c.us`}\n` +
+          `Di WA     : ${isRegistered === true ? "Ya" : isRegistered === false ? "Tidak" : "-"}\n` +
+          `Bisnis    : ${isBusiness ? "Ya" : "Tidak"}\n` +
+          `Diblokir  : ${isBlocked ? "Ya" : "Tidak"}`
         );
 
       } catch (err) {
@@ -784,10 +784,10 @@ export class WhatsAppBotService {
         if (target) {
           const number = target.replace(/\D/g, "");
           await message.reply(
-            `👤 *Info Kontak* _(terbatas)_\n\n` +
-            `📱 Nomor : +${number}\n` +
-            `🆔 ID    : ${number}@c.us\n\n` +
-            `_⚠ Data lengkap tidak tersedia.\n` +
+            `*Info Kontak* _(terbatas)_\n\n` +
+            `Nomor : +${number}\n` +
+            `ID    : ${number}@c.us\n\n` +
+            `Data lengkap tidak tersedia.\n` +
             `Kontak mungkin belum pernah chat dengan bot._`
           );
         } else {
@@ -1117,7 +1117,7 @@ export class WhatsAppBotService {
           return;
         }
         const lines = Array.from(this.schedules.keys()).map((id, i) => `${i + 1}. \`${id}\``);
-        await message.reply(`📅 *Jadwal Aktif (${this.schedules.size})*\n\n${lines.join("\n")}`);
+        await message.reply(`*Jadwal Aktif (${this.schedules.size})*\n\n${lines.join("\n")}`);
         return;
       }
 
@@ -1200,10 +1200,10 @@ export class WhatsAppBotService {
             if (this.whatsappRedirectGroupId) {
               await whatsappService.sendMessage(
                 this.whatsappRedirectGroupId,
-                `📅 *Pesan Terjadwal Terkirim*\n\n` +
-                `🆔 ID    : ${id}\n` +
-                `📤 Ke    : ${target}\n` +
-                `💬 Pesan : ${text.slice(0, 100)}`
+                `*Pesan Terjadwal Terkirim*\n\n` +
+                `ID    : ${id}\n` +
+                `Ke    : ${target}\n` +
+                `Pesan : ${text.slice(0, 100)}`
               );
             }
           } catch (err: any) {
@@ -1218,11 +1218,11 @@ export class WhatsAppBotService {
         this.schedules.set(id, timeout);
 
         await message.reply(
-          `✅ *Jadwal Dibuat*\n\n` +
-          `🆔 ID    : ${id}\n` +
-          `📤 Ke    : ${target}\n` +
-          `⏰ Waktu : ${label} WIB\n` +
-          `💬 Pesan : ${text.slice(0, 80)}`
+          `*Jadwal Dibuat*\n\n` +
+          `ID    : ${id}\n` +
+          `Ke    : ${target}\n` +
+          `Waktu : ${label} WIB\n` +
+          `Pesan : ${text.slice(0, 80)}`
         );
 
         log.cmd(`schedule set | id: ${id} | target: ${target} | delay: ${delayMs}ms`);
@@ -1257,7 +1257,7 @@ export class WhatsAppBotService {
         const lines = Array.from(this.autoReplies.entries()).map(
           ([kw, rep], i) => `*${i + 1}. "${kw}"*\n↩ ${rep.slice(0, 60)}${rep.length > 60 ? "..." : ""}`
         );
-        await message.reply(`🤖 *Auto Reply (${this.autoReplies.size})*\n\n${lines.join("\n\n")}`);
+        await message.reply(`*Auto Reply (${this.autoReplies.size})*\n\n${lines.join("\n\n")}`);
         return;
       }
 
@@ -1306,9 +1306,9 @@ export class WhatsAppBotService {
 
         this.autoReplies.set(keyword, reply);
         await message.reply(
-          `✅ *Auto Reply Ditambahkan*\n\n` +
-          `🔑 Keyword : "${keyword}"\n` +
-          `↩ Balasan : ${reply.slice(0, 100)}`
+          `*Auto Reply Ditambahkan*\n\n` +
+          `Keyword : "${keyword}"\n` +
+          `Balasan : ${reply.slice(0, 100)}`
         );
 
         log.bot(`autoreply added | keyword: "${keyword}"`);
@@ -1388,10 +1388,10 @@ export class WhatsAppBotService {
         const { success, failed } = await whatsappService.broadcast(targets, content);
 
         await message.reply(
-          `✅ *Template Terkirim*\n\n` +
-          `📋 Template : \`${name}\`\n` +
-          `✔ Berhasil : *${success.length}*\n` +
-          `✘ Gagal    : *${failed.length}*`
+          `*Template Terkirim*\n\n` +
+          `Template : \`${name}\`\n` +
+          `Berhasil : *${success.length}*\n` +
+          `Gagal    : *${failed.length}*`
         );
 
         log.cmd(`template send done | name: ${name} | success: ${success.length} | failed: ${failed.length}`);
@@ -1423,9 +1423,9 @@ export class WhatsAppBotService {
 
         this.templates.set(name, content);
         await message.reply(
-          `✅ *Template Disimpan*\n\n` +
-          `📋 Nama  : \`${name}\`\n` +
-          `💬 Isi   : ${content.slice(0, 100)}${content.length > 100 ? "..." : ""}\n\n` +
+          `*Template Disimpan*\n\n` +
+          `Nama  : \`${name}\`\n` +
+          `Isi   : ${content.slice(0, 100)}${content.length > 100 ? "..." : ""}\n\n` +
           `Kirim dengan: \`!template send ${name} [target]\``
         );
 
