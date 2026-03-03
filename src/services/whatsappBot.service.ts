@@ -430,6 +430,34 @@ export class WhatsAppBotService {
       log.cmd(`get-chat done | returned: ${filtered.length} chats`);
     });
 
+    this.commands.set("list-group", async (message) => {
+      log.cmd(`list-group | from: ${message.from}`);
+
+      const groups = await whatsappService.getGroups();
+
+      if (groups.length === 0) {
+        await message.reply("Tidak ada group ditemukan.");
+        return;
+      }
+
+      const lines = groups.map((g, i) =>
+        `*${i + 1}. ${g.name}*\n` +
+        `id      : ${g.id}\n` +
+        `members : ${g.participants}`
+      );
+
+      const chunkSize = 10;
+      for (let i = 0; i < lines.length; i += chunkSize) {
+        const chunk = lines.slice(i, i + chunkSize);
+        await message.reply(
+          `*Daftar Group (${i + 1}-${Math.min(i + chunkSize, lines.length)} dari ${groups.length})*\n\n` +
+          chunk.join("\n\n")
+        );
+      }
+
+      log.cmd(`list-group done | total: ${groups.length}`);
+    });
+
     this.commands.set("send", async (message, args) => {
       log.cmd(`send | from: ${message.from} | args: [${args.join(", ")}]`);
 
@@ -525,8 +553,236 @@ export class WhatsAppBotService {
       );
     });
 
+    // Usage:
+    // !broadcast all | Pesan                          → semua (kontak + group)
+    // !broadcast all-contacts | Pesan                 → semua kontak
+    // !broadcast all-groups | Pesan                   → semua group
+    // !broadcast 628xxx,628yyy,groupId@g.us | Pesan   → target spesifik (mix)
+
+    this.commands.set("broadcast", async (message, args) => {
+      log.cmd(`broadcast | from: ${message.from}`);
+
+      const fullText = args.join(" ");
+      const separatorIndex = fullText.indexOf("|");
+
+      if (separatorIndex === -1) {
+        await message.reply(
+          "*Usage:*\n\n" +
+          "• Semua (kontak + group):\n  `!broadcast all | Pesan`\n\n" +
+          "• Semua kontak:\n  `!broadcast all-contacts | Pesan`\n\n" +
+          "• Semua group:\n  `!broadcast all-groups | Pesan`\n\n" +
+          "• Target spesifik (mix nomor & group):\n  `!broadcast 628xxx,628yyy,groupId@g.us | Pesan`"
+        );
+        return;
+      }
+
+      const targetsRaw = fullText.slice(0, separatorIndex).trim();
+      const broadcastMsg = fullText.slice(separatorIndex + 1).trim();
+
+      if (!targetsRaw || !broadcastMsg) {
+        await message.reply("Target dan pesan tidak boleh kosong.");
+        return;
+      }
+
+      const targets = targetsRaw
+        .split(",")
+        .map(t => t.trim())
+        .filter(Boolean);
+
+      // Preview target
+      const isAll = targets.includes("all");
+      const isAllContacts = targets.includes("all-contacts");
+      const isAllGroups = targets.includes("all-groups");
+
+      const targetLabel = isAll
+        ? "Semua kontak & group"
+        : isAllContacts
+          ? "Semua kontak"
+          : isAllGroups
+            ? "Semua group"
+            : `${targets.length} target`;
+
+      await message.reply(
+        `⏳ *Broadcast Dimulai*\n\n` +
+        `📢 Target : *${targetLabel}*\n` +
+        `💬 Pesan  : "${broadcastMsg.slice(0, 60)}${broadcastMsg.length > 60 ? "..." : ""}"`
+      );
+
+      const { success, failed } = await whatsappService.broadcast(targets, broadcastMsg);
+
+      await message.reply(
+        `✅ *Broadcast Selesai*\n\n` +
+        `✔ Berhasil: *${success.length}*\n` +
+        `✘ Gagal   : *${failed.length}*\n\n` +
+        (failed.length > 0
+          ? `*Gagal ke:*\n${failed.map(id => `• ${id}`).join("\n")}`
+          : "🎉 Semua berhasil!")
+      );
+
+      log.cmd(`broadcast done | success: ${success.length} | failed: ${failed.length}`);
+    });
+
+    this.commands.set("status", async (message) => {
+      log.cmd(`status | from: ${message.from}`);
+
+      const status = whatsappService.getStatus();
+      const uptime = process.uptime();
+      const hours = Math.floor(uptime / 3600);
+      const minutes = Math.floor((uptime % 3600) / 60);
+      const seconds = Math.floor(uptime % 60);
+
+      const memUsage = process.memoryUsage();
+      const mbUsed = (memUsage.heapUsed / 1024 / 1024).toFixed(1);
+      const mbTotal = (memUsage.heapTotal / 1024 / 1024).toFixed(1);
+
+      await message.reply(
+        `🤖 *Status Bot*\n\n` +
+        `🟢 Ready       : ${status.isReady ? "Ya" : "Tidak"}\n` +
+        `🔐 Authenticated: ${status.isAuthenticated ? "Ya" : "Tidak"}\n` +
+        `📱 Nomor Bot   : ${whatsappService.botNumber ?? "-"}\n\n` +
+        `⏱ Uptime      : ${hours}j ${minutes}m ${seconds}d\n` +
+        `💾 Memory      : ${mbUsed} / ${mbTotal} MB\n` +
+        `📦 Node.js     : ${process.version}`
+      );
+
+      log.cmd(`status done | isReady: ${status.isReady}`);
+    });
+
+    // Usage:
+    //   !info              → info pengirim
+    //   !info 6281234      → info kontak by nomor
+    //   !info 1234@g.us    → info group by ID
+    // ─────────────────────────────────────────────────────────────────────────
+    this.commands.set("info", async (message, args) => {
+      log.cmd(`info | from: ${message.from} | args: [${args.join(", ")}]`);
+
+      const target = args[0]?.trim();
+
+      // ── Info Group ───────────────────────────────────────────────────
+      if (target?.endsWith("@g.us") || (!target && message.from.endsWith("@g.us"))) {
+        const groupId = target ?? message.from;
+
+        try {
+          const chat = await whatsappService.getChatById(groupId) as any;
+
+          await message.reply(
+            `👥 *Info Group*\n\n` +
+            `📌 Nama      : ${chat.name}\n` +
+            `🆔 ID        : ${chat.id._serialized}\n` +
+            `👤 Members   : ${chat.participants?.length ?? "-"}\n` +
+            `📝 Deskripsi : ${chat.description || "-"}\n` +
+            `🔒 Only Admin: ${chat.groupMetadata?.announce ? "Ya" : "Tidak"}\n` +
+            `📅 Dibuat    : ${chat.groupMetadata?.creation
+              ? new Date(chat.groupMetadata.creation * 1000).toLocaleString("id-ID")
+              : "-"
+            }`
+          );
+        } catch (err) {
+          log.error(`info group failed | id: ${groupId} | error:`, err);
+          await message.reply(`Gagal ambil info group: ${groupId}`);
+        }
+        return;
+      }
+
+      // ── Info Kontak ──────────────────────────────────────────────────
+      try {
+        let contact: any;
+
+        if (target) {
+          const chatId = `${target.replace(/\D/g, "")}@c.us`;
+          contact = await whatsappService.getContactById(chatId);
+        } else {
+          contact = await message.getContact();
+        }
+
+        const isRegistered = await contact.isWAContact?.() ?? "-";
+        const isBusiness = contact.isBusiness ?? false;
+        const isBlocked = contact.isBlocked ?? false;
+
+        await message.reply(
+          `👤 *Info Kontak*\n\n` +
+          `📛 Nama      : ${contact.pushname || contact.name || "-"}\n` +
+          `📱 Nomor     : +${contact.number}\n` +
+          `🆔 ID        : ${contact.id._serialized}\n` +
+          `✅ Di WA     : ${isRegistered === true ? "Ya" : isRegistered === false ? "Tidak" : "-"}\n` +
+          `💼 Bisnis    : ${isBusiness ? "Ya" : "Tidak"}\n` +
+          `🚫 Diblokir  : ${isBlocked ? "Ya" : "Tidak"}`
+        );
+      } catch (err) {
+        log.error(`info contact failed | target: ${target} | error:`, err);
+        await message.reply(`❌ Gagal ambil info kontak: ${target ?? message.from}`);
+      }
+
+      log.cmd(`info done | target: ${target ?? message.from}`);
+    });
+
+    // Usage:
+    //   Kirim gambar + caption "!sticker"
+    //   Reply gambar/video lalu ketik "!sticker"
+    //   !sticker [nama] [author]   → custom metadata
+    // ─────────────────────────────────────────────────────────────────────────
+    this.commands.set("sticker", async (message, args) => {
+      log.cmd(`sticker | from: ${message.from}`);
+
+      const stickerName = args[0] ?? "Bot";
+      const stickerAuthor = args[1] ?? "WhatsApp Bot";
+
+      let targetMessage = message;
+
+      // Cek apakah reply ke pesan lain
+      if (message.hasQuotedMsg) {
+        log.bot("sticker: using quoted message");
+        targetMessage = await message.getQuotedMessage();
+      }
+
+      // Validasi ada media
+      if (!targetMessage.hasMedia) {
+        await message.reply(
+          "*Tidak ada gambar/video.*\n\n" +
+          "*Cara pakai:*\n" +
+          "• Kirim gambar + caption `!sticker`\n" +
+          "• Reply gambar/video lalu ketik `!sticker`\n" +
+          "• `!sticker [nama] [author]` untuk custom"
+        );
+        return;
+      }
+
+      const type = targetMessage.type;
+      const isImage = type === "image";
+      const isVideo = type === "video";
+
+      if (!isImage && !isVideo) {
+        await message.reply(`Tipe *${type}* tidak didukung. Gunakan gambar atau video (max 3 detik).`);
+        return;
+      }
+
+      try {
+        log.media(`sticker: downloading media | type: ${type}`);
+        const media = await targetMessage.downloadMedia();
+
+        if (!media?.data) {
+          await message.reply("Gagal download media.");
+          return;
+        }
+
+        log.media(`sticker: sending as sticker | name: ${stickerName} | author: ${stickerAuthor}`);
+        await whatsappService.sendMessage(message.from, media, {
+          sendMediaAsSticker: true,
+          stickerName,
+          stickerAuthor,
+          stickerCategories: ["🤖"],
+        });
+
+        log.cmd(`sticker sent | to: ${message.from} | type: ${type}`);
+      } catch (err) {
+        log.error(`sticker failed | from: ${message.from} | error:`, err);
+        await message.reply("Gagal buat sticker. Coba lagi.");
+      }
+    });
+
     log.bot(`commands registered | total: ${this.commands.size} | list: [${Array.from(this.commands.keys()).join(", ")}]`);
   }
+
 
   /** HELPER */
   private buildSenderHeader(senderName: string, senderNumber: string, type: string): string {

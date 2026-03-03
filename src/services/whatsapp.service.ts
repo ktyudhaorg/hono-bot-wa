@@ -309,6 +309,105 @@ export class WhatsAppService {
     }));
   }
 
+
+  public async broadcast(
+    targets: string[],  // bisa mix: nomor, @c.us, @g.us, atau "all-contacts", "all-groups", "all"
+    message: string,
+    options?: {
+      delayMs?: number;
+      caption?: string;
+      filePath?: string; // jika ada media
+    }
+  ): Promise<{ success: string[]; failed: string[] }> {
+    if (!this.isReady) throw new Error("WhatsApp client: not ready");
+
+    const delay = options?.delayMs ?? 3000;
+    const success: string[] = [];
+    const failed: string[] = [];
+
+    // ── Resolve targets
+    let resolvedTargets: string[] = [];
+
+    const needAllContacts = targets.includes("all") || targets.includes("all-contacts");
+    const needAllGroups = targets.includes("all") || targets.includes("all-groups");
+
+    if (needAllContacts || needAllGroups) {
+      const chats = await this.client.getChats();
+
+      if (needAllContacts) {
+        const contacts = chats
+          .filter(c => !c.isGroup && c.id._serialized.endsWith("@c.us"))
+          .map(c => c.id._serialized);
+        resolvedTargets.push(...contacts);
+      }
+
+      if (needAllGroups) {
+        const groups = chats
+          .filter(c => c.isGroup)
+          .map(c => c.id._serialized);
+        resolvedTargets.push(...groups);
+      }
+    }
+
+    // Tambahkan target manual (selain keyword "all*")
+    const manualTargets = targets.filter(
+      t => !["all", "all-contacts", "all-groups"].includes(t)
+    );
+
+    for (const t of manualTargets) {
+      if (t.endsWith("@c.us") || t.endsWith("@g.us")) {
+        resolvedTargets.push(t);
+      } else {
+        // Anggap nomor biasa → personal chat
+        resolvedTargets.push(`${t.replace(/\D/g, "")}@c.us`);
+      }
+    }
+
+    // Deduplicate
+    resolvedTargets = [...new Set(resolvedTargets)];
+    log.send(`broadcast start | total targets: ${resolvedTargets.length}`);
+
+    // ── Media atau text? 
+    const media = options?.filePath
+      ? MessageMedia.fromFilePath(options.filePath)
+      : null;
+
+    // ── Send loop
+    for (const chatId of resolvedTargets) {
+      try {
+        if (media) {
+          await this.client.sendMessage(chatId, media, {
+            caption: options?.caption ?? message,
+          });
+        } else {
+          await this.client.sendMessage(chatId, message);
+        }
+
+        log.send(`broadcast ok | to: ${chatId}`);
+        success.push(chatId);
+      } catch (err) {
+        log.error(`broadcast failed | to: ${chatId} | error:`, err);
+        failed.push(chatId);
+      }
+
+
+      await new Promise(res => setTimeout(res, delay + Math.random() * 1000));
+    }
+
+    log.send(`broadcast done | success: ${success.length} | failed: ${failed.length}`);
+    return { success, failed };
+  }
+
+  public async getChatById(chatId: string): Promise<any> {
+    if (!this.isReady) throw new Error("WhatsApp client: not ready");
+    return this.client.getChatById(chatId);
+  }
+
+  public async getContactById(contactId: string): Promise<any> {
+    if (!this.isReady) throw new Error("WhatsApp client: not ready");
+    return this.client.getContactById(contactId);
+  }
+
   public getStatus(): { isReady: boolean; isAuthenticated: boolean } {
     const status = {
       isReady: this.isReady,
