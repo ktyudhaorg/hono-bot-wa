@@ -131,7 +131,9 @@ export class WhatsAppService {
   public async sendMessage(to: string, content: any, options?: any): Promise<any> {
     if (!this.isReady) throw new Error("WhatsApp client: not ready");
     try {
-      const numberId = await this.client.getNumberId(to.replace("@c.us", ""));
+      const rawNumber = to.replace(/@c\.us$/, "").replace(/@lid$/, "");
+      const numberId = await this.client.getNumberId(rawNumber);
+
       if (!numberId) {
         throw new Error(`Nomor ${to} tidak terdaftar di WhatsApp`);
       }
@@ -141,9 +143,17 @@ export class WhatsAppService {
       return this.client.sendMessage(resolvedId, content, options);
 
     } catch (err: any) {
+      // Fallback group
       if (to.endsWith("@g.us")) {
         return this.client.sendMessage(to, content, options);
       }
+
+      // Fallback @lid → kirim langsung, biar WA yang resolve
+      if (to.endsWith("@lid")) {
+        log.warn(`getNumberId failed for @lid, sending directly | to: ${to}`);
+        return this.client.sendMessage(to, content, options);
+      }
+
       throw err;
     }
   }
