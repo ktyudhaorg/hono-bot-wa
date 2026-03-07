@@ -182,12 +182,6 @@ export class WhatsAppBotService {
     }
 
     const quoted = await message.getQuotedMessage();
-
-    // Debug: lihat semua isi replyMap
-    log.bot(`replyMap size: ${this.replyMap.size}`);
-    log.bot(`replyMap keys: ${JSON.stringify(Array.from(this.replyMap.keys()))}`);
-    log.bot(`quoted.id._serialized: ${quoted.id._serialized}`);
-
     const targetSender = this.replyMap.get(quoted.id._serialized);
 
     if (!targetSender) {
