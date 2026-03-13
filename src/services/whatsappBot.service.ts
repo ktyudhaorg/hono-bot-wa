@@ -1,6 +1,5 @@
 import { Message, MessageTypes, MessageMedia } from "whatsapp-web.js";
 import { whatsappService } from "./whatsapp.service";
-import { generateWaLink } from "@/helpers/generateWaLink";
 import { compressImage, compressVideo } from "@/helpers/media";
 import { safeBody, safeString } from "@/helpers/general";
 import { log } from "@/helpers/logger";

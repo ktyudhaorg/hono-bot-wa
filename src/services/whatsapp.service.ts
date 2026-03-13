@@ -7,7 +7,6 @@ import {
 } from "whatsapp-web.js";
 import fs from "fs";
 import * as qrcode from "qrcode-terminal";
-import { formatPhoneNumber } from "@/helpers/formatPhoneNumber";
 import { log } from "@/helpers/logger";
 
 export class WhatsAppService {
@@ -32,6 +31,9 @@ export class WhatsAppService {
       authStrategy: new LocalAuth(),
       puppeteer: {
         headless: true,
+        // MacOS
+        // executablePath: "/opt/homebrew/bin/chromium",
+        // Linux
         // executablePath: "/usr/bin/chromium",
         args: [
           "--no-sandbox",
