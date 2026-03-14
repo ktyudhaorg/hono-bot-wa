@@ -34,6 +34,14 @@ export class TelegramService {
             log.bot("initialize skipped | already ready");
             return;
         }
+
+        const webhookInfo = await this.bot.getWebHookInfo();
+        if (webhookInfo.url) {
+            this.isReady = true;
+            log.bot(`Webhook already set | url: ${webhookInfo.url}`);
+            return;
+        }
+
         await this.bot.stopPolling();
         await this.bot.startPolling();
         this.isReady = true;
@@ -60,6 +68,7 @@ export class TelegramService {
     public async deleteWebhook(): Promise<void> {
         await this.bot.deleteWebHook();
         await this.bot.startPolling();
+        this.isReady = true;
         log.bot("Webhook deleted, polling started");
     }
 

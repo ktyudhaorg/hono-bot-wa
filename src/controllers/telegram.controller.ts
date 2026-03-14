@@ -55,13 +55,21 @@ export class TelegramController {
 
     public async broadcast(c: Context) {
         try {
-            const { targets, message, delayMs, caption, mediaUrl } = await c.req.json();
+            const body = await c.req.parseBody();
+
+            const targets = body["targets[]"];
+            const message = body["message"] as string;
+            const delayMs = body["delayMs"] ? Number(body["delayMs"]) : undefined;
+            const caption = body["caption"] as string | undefined;
+            const mediaUrl = body["mediaUrl"] as string | undefined;
 
             if (!targets || !message) {
                 return c.json({ success: false, error: "Missing required fields: targets and message" }, 400);
             }
 
-            const result = await telegramBroadcastService.broadcast(targets, message, { delayMs, caption, mediaUrl });
+            const targetList = (Array.isArray(targets) ? targets : [targets]).filter((t): t is string => typeof t === "string");
+
+            const result = await telegramBroadcastService.broadcast(targetList, message, { delayMs, caption, mediaUrl });
             return c.json({ success: true, data: result });
         } catch (error: any) {
             return c.json({ success: false, error: error.message || "Failed to broadcast" }, 500);
