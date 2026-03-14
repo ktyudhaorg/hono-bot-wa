@@ -9,6 +9,7 @@ export class TelegramBroadcastService {
         options?: {
             delayMs?: number;
             caption?: string;
+            file?: File;
             mediaUrl?: string;
         }
     ): Promise<{ success: string[]; failed: string[] }> {
@@ -26,6 +27,7 @@ export class TelegramBroadcastService {
                     to,
                     message,
                     caption: options?.caption,
+                    file: options?.file,
                     mediaUrl: options?.mediaUrl,
                 });
                 success.push(to);

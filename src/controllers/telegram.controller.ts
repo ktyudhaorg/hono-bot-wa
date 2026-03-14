@@ -61,15 +61,24 @@ export class TelegramController {
             const message = body["message"] as string;
             const delayMs = body["delayMs"] ? Number(body["delayMs"]) : undefined;
             const caption = body["caption"] as string | undefined;
+            const file = body["file"] as File | undefined;
             const mediaUrl = body["mediaUrl"] as string | undefined;
 
-            if (!targets || !message) {
-                return c.json({ success: false, error: "Missing required fields: targets and message" }, 400);
+            if (!targets) {
+                return c.json({ success: false, error: "Missing required field: targets[]" }, 400);
+            }
+
+            if (!message && !file && !mediaUrl) {
+                return c.json({ success: false, error: "Missing field: message, file, or mediaUrl" }, 400);
             }
 
             const targetList = (Array.isArray(targets) ? targets : [targets]).filter((t): t is string => typeof t === "string");
 
-            const result = await telegramBroadcastService.broadcast(targetList, message, { delayMs, caption, mediaUrl });
+            if (targetList.length === 0) {
+                return c.json({ success: false, error: "No valid targets provided" }, 400);
+            }
+
+            const result = await telegramBroadcastService.broadcast(targetList, message ?? "", { delayMs, caption, file, mediaUrl });
             return c.json({ success: true, data: result });
         } catch (error: any) {
             return c.json({ success: false, error: error.message || "Failed to broadcast" }, 500);
