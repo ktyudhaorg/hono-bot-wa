@@ -41,7 +41,7 @@ export class WhatsAppService {
     log.bot("creating new WhatsApp client...");
     return new Client({
       authStrategy: new LocalAuth({
-        dataPath: "/app/.wwebjs_auth",
+        dataPath: "/opt/wa-auth",
       }),
       puppeteer: {
         headless: true,
@@ -49,7 +49,7 @@ export class WhatsAppService {
         // executablePath: "/opt/homebrew/bin/chromium",
         // Linux
         // executablePath: "/usr/bin/chromium",
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+        // executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
