@@ -3,7 +3,7 @@ name: CI CD - Bot Whatsapp Telegram
 on:
   push:
     branches:
-      - cicd
+      - main
 
 jobs:
   ci:
