@@ -46,10 +46,6 @@ COPY . .
 
 # Jalankan Hono dengan hot reload
 # CMD ["bun", "run", "--hot", "src/index.ts"]
-# CMD ["bun", "run", "start"]
+CMD ["bun", "run", "start"]
 
-# Build
-RUN bun run build
 
-# Run Hasil Build
-CMD ["bun", "dist/index.js"]

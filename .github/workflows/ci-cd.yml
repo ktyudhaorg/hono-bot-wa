@@ -22,9 +22,6 @@ jobs:
       - name: Type check
         run: bun run typecheck || true
 
-      - name: Build check
-        run: bun run build
-
   cd:
     runs-on: self-hosted
     needs: ci
