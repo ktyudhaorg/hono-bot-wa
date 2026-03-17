@@ -29,8 +29,8 @@ RUN apt-get update && apt-get install -y \
  && rm -rf /var/lib/apt/lists/*
 
  # Tambahkan ini
-# ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-# ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Salin package.json dan bun.lockb untuk caching
 COPY package.json bun.lockb* ./
@@ -42,8 +42,14 @@ RUN bun install
 COPY . .
 
 # Volume untuk session WhatsApp
-VOLUME ["/app/data"]
+# VOLUME ["/app/data"]
 
 # Jalankan Hono dengan hot reload
 # CMD ["bun", "run", "--hot", "src/index.ts"]
-CMD ["bun", "run", "start"]
+# CMD ["bun", "run", "start"]
+
+# Build
+RUN bun run build
+
+# Run Hasil Build
+CMD ["bun", "dist/index.js"]
