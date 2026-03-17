@@ -42,7 +42,14 @@ jobs:
       - name: Clean chromium lock
         run: |
           mkdir -p /opt/wa-auth
-          rm -rf /opt/wa-auth/Singleton* /opt/wa-auth/lockfile
+          find /opt/wa-auth -name "Singleton*" -type f -delete || true
+          find /opt/wa-auth -name "LOCK" -type f -delete || true
+          rm -rf /tmp/puppeteer* || true
+
+      - name: Kill old chromium
+        run: |
+          pkill chromium || true
+          pkill chrome || true
 
       - name: Build & Run
         run: docker compose up -d --build
