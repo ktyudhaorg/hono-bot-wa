@@ -41,22 +41,22 @@ jobs:
 
       - name: Prepare volume directories
         run: |
-          mkdir -p /opt/wa-auth
-          mkdir -p /opt/wa-cache
+          sudo mkdir -p /opt/wa-auth
+          sudo mkdir -p /opt/wa-cache
 
       - name: Clean chromium lock
         run: |
-          find /opt/wa-auth -name "Singleton*" -type f -delete || true
-          find /opt/wa-auth -name "LOCK" -type f -delete || true
-          rm -rf /tmp/puppeteer* || true
+          sudo find /opt/wa-auth -name "Singleton*" -type f -delete || true
+          sudo find /opt/wa-auth -name "LOCK" -type f -delete || true
+          sudo rm -rf /tmp/puppeteer* || true
 
       - name: Kill old chromium
         run: |
-          pkill chromium || true
-          pkill chrome || true
+          sudo pkill chromium || true
+          sudo pkill chrome || true
 
       - name: Build & Run
-        run: docker compose up -d --build
+        run: sudo docker compose up -d --build
 
       - name: Cleanup unused images
-        run: docker image prune -f
+        run: sudo docker image prune -f
