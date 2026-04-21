@@ -39,6 +39,8 @@ jobs:
           script: |
             cd ~/www/hono-bot-wa
 
+            sudo docker compose down || true
+
             git pull origin main
 
             sudo mkdir -p /opt/wa-auth
