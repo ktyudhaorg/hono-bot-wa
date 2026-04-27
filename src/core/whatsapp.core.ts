@@ -2,7 +2,7 @@ import { whatsappService } from "@/services/whatsapp.service";
 import { WhatsAppBotService } from "@/services/whatsappBot.service";
 import { log } from "@/helpers/logger";
 
-const MAX_RETRIES = 5;
+const MAX_RETRIES = Number(process.env.WHATSAPP_STARTUP_MAX_RETRIES) || 5;
 const RETRY_DELAY_MS = Number(process.env.WHATSAPP_STARTUP_DELAY_MS) || 8_000;
 
 async function attemptInitialize(): Promise<void> {
