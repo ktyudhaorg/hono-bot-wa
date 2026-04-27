@@ -143,6 +143,40 @@ export class WhatsAppService {
     });
   }
 
+  public async initialize(): Promise<void> {
+    if (this.isInitializing || this.isReady) {
+      log.bot(
+        `initialize skipped | isInitializing: ${this.isInitializing} | isReady: ${this.isReady}`,
+      );
+      return;
+    }
+    this.isInitializing = true;
+    log.bot("initializing client...");
+    try {
+      await this.client.initialize();
+    } catch (error) {
+      this.isInitializing = false;
+      log.error("initialize failed:", error);
+      throw error;
+    }
+  }
+
+  public async reset(): Promise<void> {
+    try {
+      await this.client.destroy();
+    } catch (err) {
+      log.warn(
+        "client destroy failed, continuing reset:",
+        (err as Error).message,
+      );
+    }
+
+    this.isReady = false;
+    this.isInitializing = false;
+    this.client = this.createClient();
+    this.initializeEvents();
+  }
+
   // ─── Public API ───────────────────────────────────────────────────────────
 
   public onMessage(handler: (message: Message) => Promise<void>): void {
@@ -196,24 +230,6 @@ export class WhatsAppService {
       );
     } catch (error) {
       log.error(`sendChatMessage failed | to: ${to} | error:`, error);
-      throw error;
-    }
-  }
-
-  public async initialize(): Promise<void> {
-    if (this.isInitializing || this.isReady) {
-      log.bot(
-        `initialize skipped | isInitializing: ${this.isInitializing} | isReady: ${this.isReady}`,
-      );
-      return;
-    }
-    this.isInitializing = true;
-    log.bot("initializing client...");
-    try {
-      await this.client.initialize();
-    } catch (error) {
-      this.isInitializing = false;
-      log.error("initialize failed:", error);
       throw error;
     }
   }
