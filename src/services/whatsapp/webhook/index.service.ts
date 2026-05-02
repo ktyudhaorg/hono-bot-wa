@@ -31,7 +31,7 @@ export async function sendWebhook(payload: WebhookPayload): Promise<void> {
     const headerHmac = HmacService.generateHeaders();
 
     const body: Record<string, any> = {
-        from: payload.from,
+        from: payload.senderNumber ?? payload.from,
         name: payload.senderName,
         content_type: toContentType(payload.type.toLowerCase()),
         message: payload.body ?? "",
