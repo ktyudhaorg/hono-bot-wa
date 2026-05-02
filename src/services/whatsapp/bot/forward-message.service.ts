@@ -21,10 +21,9 @@ export async function handleForwardToGroup(
     const senderId = message.from;
     const contact = await message.getContact();
     const senderName = contact.pushname || contact.name || contact.number || senderId;
-    const senderNumber = contact.number || contact.id.user || senderId;
+    const senderNumber = contact.id.user || contact.number || senderId;
     const type = message.type as string;
 
-    log.cmd(`debug | pushname: ${contact.pushname} | name: ${contact.name} | number: ${contact.number} | contact: ${JSON.stringify(contact)}`);
     log.bot(`forwarding to group | from: ${senderName} (${senderNumber}) | type: ${type}`);
 
     if (type === MessageTypes.LOCATION || type === "live_location") {

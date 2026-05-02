@@ -244,16 +244,21 @@ export class WhatsAppService {
         if (target.endsWith("@g.us")) return target;
         if (isGroup) return `${target}@g.us`;
 
-        const rawNumber = target.replace("@c.us", "");
+        const raw = target.replace(/@c\.us$/, "").replace(/@lid$/, "");
 
         try {
-            const numberId = await this.client.getNumberId(rawNumber);
+            const numberId = await this.client.getNumberId(raw);
             if (numberId) return numberId._serialized;
         } catch {
-            log.warn(`getNumberId failed | number: ${rawNumber}, fallback ke format manual`);
+            log.warn(`getNumberId failed | number: ${raw}, fallback manual`);
         }
 
-        return `${rawNumber}@c.us`;
+        if (target.endsWith("@lid")) {
+            log.warn(`@lid fallback | sending directly | to: ${target}`);
+            return target;
+        }
+
+        return `${raw}@c.us`;
     }
 
     private validateWhatsAppId(target: string): void {
