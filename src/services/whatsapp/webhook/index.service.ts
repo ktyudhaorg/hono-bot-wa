@@ -4,6 +4,7 @@ import { HmacService } from "@/services/hmac";
 const WEBHOOK_URL = process.env.WHATSAPP_WEBHOOK_URL;
 
 export interface WebhookPayload {
+    id: string;
     from: string;
     senderName: string;
     senderNumber: string;
@@ -32,7 +33,8 @@ export async function sendWebhook(payload: WebhookPayload): Promise<void> {
     const contentType = toContentType(payload.type.toLowerCase());
 
     const body: Record<string, any> = {
-        from: payload.senderNumber ?? payload.from,
+        id: payload.id,
+        from: payload.senderNumber || payload.from,
         name: payload.senderName,
         content_type: contentType,
         message: payload.body ?? "",

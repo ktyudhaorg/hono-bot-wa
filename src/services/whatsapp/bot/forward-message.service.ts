@@ -49,6 +49,7 @@ export async function handleForwardToGroup(
 
     /** WEBHOOK */
     sendWebhook({
+        id: sentMessage.id._serialized,
         from: senderId,
         senderName,
         senderNumber,
@@ -130,18 +131,6 @@ async function handleForwardMedia(
         return;
     }
 
-    /** WEBHOOK */
-    sendWebhook({
-        from: senderId,
-        senderName,
-        senderNumber,
-        body: message.body ?? null,
-        type,
-        timestamp: message.timestamp,
-        mediaBase64: media.data,
-        mimetype: media.mimetype,
-    }).catch(err => log.error("webhook failed:", err));
-
     let sendMedia = media;
 
     if (type === "sticker") {
@@ -214,6 +203,19 @@ async function handleForwardMedia(
         caption: safeString(caption),
         sendMediaAsDocument: type === "video",
     });
+
+    /** WEBHOOK */
+    sendWebhook({
+        id: sentMessage.id._serialized,
+        from: senderId,
+        senderName,
+        senderNumber,
+        body: message.body ?? null,
+        type,
+        timestamp: message.timestamp,
+        mediaBase64: media.data,
+        mimetype: media.mimetype,
+    }).catch(err => log.error("webhook failed:", err));
 
     log.send(`media sent | type: ${type} | id: ${sentMessage.id._serialized}`);
     replyMap.set(sentMessage.id._serialized, senderId);
