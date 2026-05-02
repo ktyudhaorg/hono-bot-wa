@@ -1,4 +1,5 @@
 import { log } from "@/helpers/logger";
+import { HmacService } from "@/services/hmac";
 
 const WEBHOOK_URL = process.env.WHATSAPP_WEBHOOK_URL;
 
@@ -27,6 +28,8 @@ function toContentType(type: string): string {
 export async function sendWebhook(payload: WebhookPayload): Promise<void> {
     if (!WEBHOOK_URL) return;
 
+    const headerHmac = HmacService.generateHeaders();
+
     const body: Record<string, any> = {
         from: payload.from,
         name: payload.senderName,
@@ -45,7 +48,7 @@ export async function sendWebhook(payload: WebhookPayload): Promise<void> {
     try {
         const res = await fetch(WEBHOOK_URL, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...headerHmac },
             body: JSON.stringify(body),
         });
 
