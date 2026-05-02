@@ -29,11 +29,12 @@ export async function sendWebhook(payload: WebhookPayload): Promise<void> {
     if (!WEBHOOK_URL) return;
 
     const headerHmac = HmacService.generateHeaders();
+    const contentType = toContentType(payload.type.toLowerCase());
 
     const body: Record<string, any> = {
         from: payload.senderNumber ?? payload.from,
         name: payload.senderName,
-        content_type: toContentType(payload.type.toLowerCase()),
+        content_type: contentType,
         message: payload.body ?? "",
     };
 
@@ -58,7 +59,8 @@ export async function sendWebhook(payload: WebhookPayload): Promise<void> {
             return;
         }
 
-        log.bot(`webhook sent | status: ${res.status} | to: ${WEBHOOK_URL} |  body: ${JSON.stringify(body)}`);
+        // log.bot(`webhook sent | status: ${res.status} | to: ${WEBHOOK_URL} |  body: ${JSON.stringify(body)}`);
+        log.bot(`webhook sent | status: ${res.status} | to: ${WEBHOOK_URL} | type: ${contentType}`);
     } catch (err) {
         log.error("webhook failed:", err);
     }
