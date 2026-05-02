@@ -58,7 +58,7 @@ export async function sendWebhook(payload: WebhookPayload): Promise<void> {
             return;
         }
 
-        log.bot(`webhook sent | status: ${res.status} | to: ${WEBHOOK_URL}`);
+        log.bot(`webhook sent | status: ${res.status} | to: ${WEBHOOK_URL} |  body: ${JSON.stringify(body)}`);
     } catch (err) {
         log.error("webhook failed:", err);
     }
