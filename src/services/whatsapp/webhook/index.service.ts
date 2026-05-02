@@ -11,16 +11,32 @@ export interface WebhookPayload {
     timestamp: number;
     mediaBase64?: string;
     mimetype?: string;
+    filename?: string;
 }
 
 export async function sendWebhook(payload: WebhookPayload): Promise<void> {
     if (!WEBHOOK_URL) return;
 
+    const body: Record<string, any> = {
+        from: payload.from,
+        name: payload.senderName,
+        content_type: payload.type,
+        message: payload.body ?? "",
+    };
+
+    if (payload.mediaBase64 && payload.mimetype) {
+        body.media = {
+            data: payload.mediaBase64,
+            mimetype: payload.mimetype,
+            filename: payload.filename ?? null,
+        };
+    }
+
     try {
         const res = await fetch(WEBHOOK_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(body),
         });
 
         log.bot(`webhook sent | status: ${res.status} | to: ${WEBHOOK_URL}`);
