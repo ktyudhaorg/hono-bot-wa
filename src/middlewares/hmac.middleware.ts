@@ -3,11 +3,19 @@ import * as crypto from "crypto";
 
 const PUBLIC_KEY = process.env.HMAC_PUBLIC_KEY || "";
 const SECRET_KEY = process.env.HMAC_SECRET_KEY || "";
+const TIMESTAMP_TOLERANCE = 300;
+
+const sign = (data: string): string => {
+  return crypto
+    .createHmac("sha256", SECRET_KEY)
+    .update(data)
+    .digest("base64");
+};
 
 export const hmacMiddleware: MiddlewareHandler = async (c, next) => {
-  const clientKey = c.req.header("x-key");
-  const timestamp = c.req.header("x-timestamp");
-  const token = c.req.header("x-token");
+  const clientKey = c.req.header("X-Key");
+  const timestamp = c.req.header("X-Timestamp");
+  const token = c.req.header("X-Token");
 
   if (!clientKey || !timestamp || !token) {
     return c.json({ error: "Unauthorized." }, 401);
@@ -17,28 +25,43 @@ export const hmacMiddleware: MiddlewareHandler = async (c, next) => {
     return c.json({ error: "Unauthorized." }, 401);
   }
 
-  const now = Math.floor(Date.now() / 1000);
-  const parseTimestamp = parseInt(timestamp, 10);
-  const maxTimestamp = 60;
+  const parsedTimestamp = parseInt(timestamp, 10);
 
-  if (isNaN(parseTimestamp)) {
+  if (isNaN(parsedTimestamp)) {
     return c.json({ error: "Unauthorized." }, 400);
   }
 
-  if (Math.abs(now - parseTimestamp) > maxTimestamp) {
+  const now = Math.floor(Date.now() / 1000);
+
+  // toleransi 300 detik, arah sesuai PHP (bukan Math.abs)
+  if (parsedTimestamp < now - TIMESTAMP_TOLERANCE || parsedTimestamp > now) {
     return c.json({ error: "Unauthorized." }, 401);
   }
 
-  // const body = await c.req.raw.clone().text();
+  // input: publicKey + timestamp, sama seperti PHP
+  const expectedToken = sign(PUBLIC_KEY + timestamp);
 
-  const expectedToken = crypto
-    .createHmac("sha256", SECRET_KEY)
-    .update(timestamp)
-    .digest("hex");
+  // timing-safe comparison
+  const tokensMatch = crypto.timingSafeEqual(
+    Buffer.from(token),
+    Buffer.from(expectedToken)
+  );
 
-  if (token !== expectedToken) {
+  if (!tokensMatch) {
     return c.json({ error: "Unauthorized." }, 401);
   }
 
   await next();
 };
+
+
+// EXAMPLE
+// export const generateHmacHeaders = (): Record<string, string> => {
+//   const timestamp = String(Math.floor(Date.now() / 1000));
+
+//   return {
+//     "x-key":       PUBLIC_KEY,
+//     "x-timestamp": timestamp,
+//     "x-token":     sign(PUBLIC_KEY + timestamp),
+//   };
+// };
