@@ -2,7 +2,7 @@ import { Context } from "hono";
 import path from "path";
 import fs from "fs";
 
-import { whatsappService } from "../services/whatsapp.service";
+import { whatsappService } from "@/services/whatsapp";
 
 export class WhatsAppController {
   public async getStatus(c: Context) {

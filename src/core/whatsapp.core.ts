@@ -1,5 +1,5 @@
-import { whatsappService } from "@/services/whatsapp.service";
-import { WhatsAppBotService } from "@/services/whatsappBot.service";
+import { whatsappService } from "@/services/whatsapp";
+import { WhatsAppBotService } from "@/services/whatsapp/bot/bot.service";
 import { log } from "@/helpers/logger";
 
 const MAX_RETRIES = Number(process.env.WHATSAPP_STARTUP_MAX_RETRIES) || 5;
@@ -15,6 +15,7 @@ async function waitBeforeRetry(attempt: number): Promise<void> {
   log.bot(
     `retrying in ${RETRY_DELAY_MS / 1000}s... (attempt ${attempt}/${MAX_RETRIES})`,
   );
+
   await whatsappService.reset();
   await new Promise((res) => setTimeout(res, RETRY_DELAY_MS));
 }
@@ -31,5 +32,5 @@ export default async function whatsappInitialize(): Promise<void> {
     }
   }
 
-  log.error("semua attempt gagal, bot tidak aktif");
+  log.error("failed all attempt, bot is inactive");
 }

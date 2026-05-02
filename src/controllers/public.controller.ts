@@ -1,5 +1,5 @@
 import { Context } from "hono";
-import { whatsappService } from "../services/whatsapp.service";
+import { whatsappService } from "@/services/whatsapp";
 
 export class PublicController {
     public async sendMessageGlobal(c: Context) {
