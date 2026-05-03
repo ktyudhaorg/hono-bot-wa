@@ -21,8 +21,10 @@ function toContentType(type: string): string {
     if (type === "chat") return "text";
     if (type === "image") return "image";
     if (type === "video") return "video";
-    if (type === "audio" || type === "ptt") return "audio";
+    if (type === "audio") return "audio";
+    if (type === "ptt") return "ptt";
     if (type === "document") return "document";
+    if (type === "sticker") return "sticker";
     return "file";
 }
 

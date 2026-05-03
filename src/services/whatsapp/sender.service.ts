@@ -63,10 +63,11 @@ export class WhatsAppSender {
 
     public async sendMessageGlobal(to: string, message: string): Promise<void> {
         this.checkReady();
-        this.validateWhatsAppId(to);
+        // this.validateWhatsAppId(to);
 
         try {
-            await this.getClient().sendMessage(to, message);
+            const chatId = await this.toWhatsAppId(to);
+            await this.getClient().sendMessage(chatId, message);
             log.send(`global message sent | to: ${to} | length: ${message.length} chars`);
         } catch (error) {
             log.error(`sendMessageGlobal failed | to: ${to} | error:`, error);
@@ -76,7 +77,7 @@ export class WhatsAppSender {
 
     public async sendMediaGlobal(to: string, filePath: string, caption?: string): Promise<void> {
         this.checkReady();
-        this.validateWhatsAppId(to);
+        // this.validateWhatsAppId(to);
 
         try {
             const chatId = await this.toWhatsAppId(to);
