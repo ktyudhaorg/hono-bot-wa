@@ -1,5 +1,5 @@
 import { Message, MessageTypes, MessageMedia } from "whatsapp-web.js";
-import { log, safeBody, safeString, compressImage, compressVideo, buildSenderHeader, sendHeaderMessage } from "@/helpers/index";
+import { log, safeBody, safeString, compressImage, compressVideo, buildSenderHeader, sendHeaderMessage } from "@/helpers";
 import { whatsappService } from "@/services/whatsapp";
 import { sendWebhook } from "@/services/whatsapp/webhook/index.service";
 
