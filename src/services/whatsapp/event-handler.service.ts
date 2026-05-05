@@ -2,6 +2,7 @@ import { Client, Message } from "whatsapp-web.js";
 import * as qrcode from "qrcode-terminal";
 import { log } from "@/helpers/logger";
 import { WhatsAppState } from "./state.service";
+import { wasBotSent } from "./bot-sent-registry";
 
 type MessageHandler = (message: Message) => Promise<void>;
 
@@ -54,6 +55,7 @@ export class WhatsAppEventHandler {
         // Capture outgoing messages sent from the phone (not triggered by "message" event)
         client.on("message_create", async (message: Message) => {
             if (!message.fromMe) return;
+            if (wasBotSent(message.id._serialized)) return;
             await this.handleMessage(message);
         });
     }

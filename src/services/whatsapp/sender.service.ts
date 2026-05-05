@@ -1,19 +1,24 @@
 import { Client, MessageMedia } from "whatsapp-web.js";
 import fs from "fs";
 import { log } from "@/helpers/logger";
+import { registerSent } from "./bot-sent-registry";
 
 type GetClient = () => Client;
 type ToWhatsAppId = (target: string, isGroup?: boolean) => Promise<string>;
-type ValidateId = (target: string) => void;
 type CheckReady = () => void;
 
 export class WhatsAppSender {
     constructor(
         private readonly getClient: GetClient,
         private readonly toWhatsAppId: ToWhatsAppId,
-        private readonly validateWhatsAppId: ValidateId,
         private readonly checkReady: CheckReady,
     ) { }
+
+    private async _send(chatId: string, content: any, options?: any): Promise<any> {
+        const sent = await this.getClient().sendMessage(chatId, content, options);
+        if (sent?.id?._serialized) registerSent(sent.id._serialized);
+        return sent;
+    }
 
     // ─── Generic send (with @lid / @g.us fallback) ────────────────────────────
 
@@ -29,15 +34,15 @@ export class WhatsAppSender {
 
             const resolvedId = numberId._serialized;
             log.send(`sendMessage | to: ${resolvedId}`);
-            return client.sendMessage(resolvedId, content, options);
+            return this._send(resolvedId, content, options);
         } catch (err: any) {
             if (to.endsWith("@g.us")) {
-                return client.sendMessage(to, content, options);
+                return this._send(to, content, options);
             }
 
             if (to.endsWith("@lid")) {
                 log.warn(`getNumberId failed for @lid, sending directly | to: ${to}`);
-                return client.sendMessage(to, content, options);
+                return this._send(to, content, options);
             }
 
             throw err;
@@ -51,7 +56,7 @@ export class WhatsAppSender {
 
         try {
             const chatId = await this.toWhatsAppId(to);
-            await this.getClient().sendMessage(chatId, message);
+            await this._send(chatId, message);
             log.send(`chat message sent | to: ${chatId} | length: ${message.length} chars`);
         } catch (error) {
             log.error(`sendChatMessage failed | to: ${to} | error:`, error);
@@ -63,11 +68,10 @@ export class WhatsAppSender {
 
     public async sendMessageGlobal(to: string, message: string): Promise<void> {
         this.checkReady();
-        // this.validateWhatsAppId(to);
 
         try {
             const chatId = await this.toWhatsAppId(to);
-            await this.getClient().sendMessage(chatId, message);
+            await this._send(chatId, message);
             log.send(`global message sent | to: ${to} | length: ${message.length} chars`);
         } catch (error) {
             log.error(`sendMessageGlobal failed | to: ${to} | error:`, error);
@@ -77,12 +81,11 @@ export class WhatsAppSender {
 
     public async sendMediaGlobal(to: string, filePath: string, caption?: string): Promise<void> {
         this.checkReady();
-        // this.validateWhatsAppId(to);
 
         try {
             const chatId = await this.toWhatsAppId(to);
             const media = MessageMedia.fromFilePath(filePath);
-            await this.getClient().sendMessage(chatId, media, { caption });
+            await this._send(chatId, media, { caption });
             log.send(`global media sent | to: ${chatId} | file: ${filePath} | caption: ${caption ?? "-"}`);
 
             fs.unlink(filePath, (err) => {
@@ -103,7 +106,7 @@ export class WhatsAppSender {
         log.media(`fetching media | url: ${mediaUrl}`);
         const chatId = await this.toWhatsAppId(to);
         const media = await MessageMedia.fromUrl(mediaUrl);
-        await this.getClient().sendMessage(chatId, media, { caption });
+        await this._send(chatId, media, { caption });
         log.send(`media sent | to: ${chatId} | caption: ${caption ?? "-"}`);
     }
 
@@ -114,7 +117,7 @@ export class WhatsAppSender {
             log.media(`fetching media from url | url: ${mediaUrl}`);
             const chatId = await this.toWhatsAppId(to);
             const media = await MessageMedia.fromUrl(mediaUrl);
-            await this.getClient().sendMessage(chatId, media, { caption });
+            await this._send(chatId, media, { caption });
             log.send(`media with url sent | to: ${chatId} | caption: ${caption ?? "-"}`);
         } catch (error) {
             log.error(`sendMediaWithUrl failed | to: ${to} | url: ${mediaUrl} | error:`, error);
@@ -129,7 +132,7 @@ export class WhatsAppSender {
 
         try {
             const chatId = await this.toWhatsAppId(groupId, true);
-            await this.getClient().sendMessage(chatId, message);
+            await this._send(chatId, message);
             log.send(`message sent to group | group: ${groupId} | length: ${message.length} chars`);
         } catch (error) {
             log.error(`sendMessageToGroup failed | group: ${groupId} | error:`, error);
@@ -144,7 +147,7 @@ export class WhatsAppSender {
             log.media(`fetching media for group | group: ${groupId} | url: ${mediaUrl}`);
             const chatId = await this.toWhatsAppId(groupId, true);
             const media = await MessageMedia.fromUrl(mediaUrl);
-            await this.getClient().sendMessage(chatId, media, { caption });
+            await this._send(chatId, media, { caption });
             log.send(`media sent to group | group: ${groupId} | caption: ${caption ?? "-"}`);
         } catch (error) {
             log.error(`sendMediaToGroup failed | group: ${groupId} | url: ${mediaUrl} | error:`, error);
@@ -176,11 +179,9 @@ export class WhatsAppSender {
         for (const chatId of uniqueTargets) {
             try {
                 if (media) {
-                    await this.getClient().sendMessage(chatId, media, {
-                        caption: options?.caption ?? message,
-                    });
+                    await this._send(chatId, media, { caption: options?.caption ?? message });
                 } else {
-                    await this.getClient().sendMessage(chatId, message);
+                    await this._send(chatId, message);
                 }
 
                 log.send(`broadcast ok | to: ${chatId}`);

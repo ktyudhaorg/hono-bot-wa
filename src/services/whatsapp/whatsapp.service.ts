@@ -27,7 +27,6 @@ export class WhatsAppService {
         this.sender = new WhatsAppSender(
             () => this.client,
             (target, isGroup) => this.toWhatsAppId(target, isGroup),
-            (target) => this.validateWhatsAppId(target),
             () => this.checkReady(),
         );
 
@@ -261,12 +260,6 @@ export class WhatsAppService {
         return `${raw}@c.us`;
     }
 
-    private validateWhatsAppId(target: string): void {
-        if (!/@(c|g)\.us$/.test(target)) {
-            log.error(`invalid WhatsApp ID | target: ${target}`);
-            throw new Error("Invalid WhatsApp ID: must end with @c.us or @g.us");
-        }
-    }
 }
 
 export const whatsappService = new WhatsAppService();
