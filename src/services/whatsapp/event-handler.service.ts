@@ -50,6 +50,12 @@ export class WhatsAppEventHandler {
         client.on("message", async (message: Message) => {
             await this.handleMessage(message);
         });
+
+        // Capture outgoing messages sent from the phone (not triggered by "message" event)
+        client.on("message_create", async (message: Message) => {
+            if (!message.fromMe) return;
+            await this.handleMessage(message);
+        });
     }
 
     private async handleMessage(message: Message): Promise<void> {
