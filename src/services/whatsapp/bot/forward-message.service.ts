@@ -240,7 +240,7 @@ export async function handleForwardOutgoingToGroup(
         `*Pesan Keluar*\n\n` +
         `*Ke*: ${recipientName}\n` +
         `*Nomor*: +${recipientNumber}\n\n` +
-        `*Pesan*:\n${safeBody(message.body)}`;
+        `*Pesan*:\n${message.body}`;
 
     log.send(`sending outgoing text to group | to: ${redirectGroupId} | recipient: ${recipientId}`);
     const sentMessage = await whatsappService.sendMessage(redirectGroupId, safeString(textMessage));
