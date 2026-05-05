@@ -59,7 +59,7 @@ export class WhatsAppBotService {
                     await this.handleCommand(message, body);
                 }
 
-                if (this.ctx.whatsappRedirectGroupId) {
+                if (this.ctx.whatsappRedirectGroupId && message.to !== this.ctx.whatsappRedirectGroupId) {
                     log.bot(`routing to handleForwardOutgoingToGroup | to: ${message.to}`);
                     await handleForwardOutgoingToGroup(message, this.ctx.whatsappRedirectGroupId, this.ctx.replyMap);
                 }
