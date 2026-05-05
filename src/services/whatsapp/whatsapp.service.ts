@@ -13,6 +13,7 @@ export class WhatsAppService {
 
     public readonly sender: WhatsAppSender;
     public get botNumber(): string | null { return this.state.botNumber; }
+    public get botName(): string | null { return this.state.botName; }
 
     constructor() {
         this.state = createInitialState();

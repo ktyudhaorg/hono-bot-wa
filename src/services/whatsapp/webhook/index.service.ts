@@ -6,11 +6,11 @@ const WEBHOOK_URL = process.env.WHATSAPP_WEBHOOK_URL;
 export interface WebhookPayload {
     id: string;
     from: string;
-    senderName: string;
-    senderNumber: string;
+    name: string;
     body: string | null;
     type: string;
     timestamp: number;
+    isFromMe: boolean;
     mediaBase64?: string;
     mimetype?: string;
     filename?: string;
@@ -36,10 +36,11 @@ export async function sendWebhook(payload: WebhookPayload): Promise<void> {
 
     const body: Record<string, any> = {
         id: payload.id,
-        from: payload.senderNumber || payload.from,
-        name: payload.senderName,
+        from: payload.from,
+        name: payload.name,
         content_type: contentType,
         message: payload.body ?? "",
+        is_from_me: payload.isFromMe,
     };
 
     if (payload.mediaBase64 && payload.mimetype) {

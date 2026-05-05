@@ -45,15 +45,7 @@ export async function handleForwardToGroup(
     const sentMessage = await whatsappService.sendMessage(redirectGroupId, safeString(textMessage));
 
     /** WEBHOOK */
-    sendWebhook({
-        id: sentMessage.id._serialized,
-        from: senderId,
-        senderName,
-        senderNumber,
-        body: message.body ?? null,
-        type,
-        timestamp: message.timestamp,
-    }).catch(err => log.error("webhook failed:", err));
+    fireWebhook(sentMessage.id._serialized, senderNumber, senderName, message);
 
     replyMap.set(sentMessage.id._serialized, senderId);
     log.bot(`replyMap set | msgId: ${sentMessage.id._serialized} → ${senderId}`);
@@ -137,7 +129,7 @@ async function handleForwardMedia(
         log.send(`sticker sent | id: ${sentMessage.id._serialized} | to: ${redirectGroupId}`);
         replyMap.set(sentMessage.id._serialized, senderId);
 
-        fireWebhook(sentMessage.id._serialized, senderId, senderNumber, senderName, message, media);
+        fireWebhook(sentMessage.id._serialized, senderNumber, senderName, message, media);
         return;
     }
 
@@ -148,7 +140,7 @@ async function handleForwardMedia(
         log.send(`audio sent | type: ${type} | id: ${sentMessage.id._serialized}`);
         replyMap.set(sentMessage.id._serialized, senderId);
 
-        fireWebhook(sentMessage.id._serialized, senderId, senderNumber, senderName, message, media);
+        fireWebhook(sentMessage.id._serialized, senderNumber, senderName, message, media);
         return;
     }
 
@@ -161,7 +153,7 @@ async function handleForwardMedia(
         log.send(`document sent | id: ${sentMessage.id._serialized}`);
         replyMap.set(sentMessage.id._serialized, senderId);
 
-        fireWebhook(sentMessage.id._serialized, senderId, senderNumber, senderName, message, media);
+        fireWebhook(sentMessage.id._serialized, senderNumber, senderName, message, media);
         return;
     }
 
@@ -211,7 +203,7 @@ async function handleForwardMedia(
     log.send(`media sent | type: ${type} | id: ${sentMessage.id._serialized}`);
 
     /** WEBHOOK */
-    fireWebhook(sentMessage.id._serialized, senderId, senderNumber, senderName, message, sendMedia);
+    fireWebhook(sentMessage.id._serialized, senderNumber, senderName, message, sendMedia);
     log.bot(`replyMap set | msgId: ${sentMessage.id._serialized} → ${senderId}`);
 }
 
@@ -253,15 +245,8 @@ export async function handleForwardOutgoingToGroup(
     log.send(`sending outgoing text to group | to: ${redirectGroupId} | recipient: ${recipientId}`);
     const sentMessage = await whatsappService.sendMessage(redirectGroupId, safeString(textMessage));
 
-    sendWebhook({
-        id: sentMessage.id._serialized,
-        from: recipientId,
-        senderName: recipientName,
-        senderNumber: recipientNumber,
-        body: message.body ?? null,
-        type,
-        timestamp: message.timestamp,
-    }).catch(err => log.error("webhook failed:", err));
+    /** WEBHOOK */
+    fireWebhook(sentMessage.id._serialized, whatsappService.botNumber ?? message.from, whatsappService.botName ?? whatsappService.botNumber ?? message.from, message);
 
     replyMap.set(sentMessage.id._serialized, recipientId);
     log.bot(`replyMap set | msgId: ${sentMessage.id._serialized} → ${recipientId}`);
@@ -276,6 +261,9 @@ async function handleForwardOutgoingMedia(
     replyMap: Map<string, string>
 ): Promise<void> {
     const type = message.type;
+    const botId = message.from;
+    const botNumber = whatsappService.botNumber ?? message.from;
+    const botName = whatsappService.botName ?? botNumber;
     log.media(`outgoing media | to: ${recipientId} | type: ${type}`);
 
     const media = await message.downloadMedia();
@@ -290,7 +278,7 @@ async function handleForwardOutgoingMedia(
         await sendHeaderMessage(redirectGroupId, recipientName, recipientNumber, "sticker");
         const sentMessage = await whatsappService.sendMessage(redirectGroupId, media, { sendMediaAsSticker: true });
         replyMap.set(sentMessage.id._serialized, recipientId);
-        fireWebhook(sentMessage.id._serialized, recipientId, recipientNumber, recipientName, message, media);
+        fireWebhook(sentMessage.id._serialized, botNumber, botName, message, media);
         return;
     }
 
@@ -298,7 +286,7 @@ async function handleForwardOutgoingMedia(
         await sendHeaderMessage(redirectGroupId, recipientName, recipientNumber, type);
         const sentMessage = await whatsappService.sendMessage(redirectGroupId, media, { sendAudioAsVoice: type === "ptt" });
         replyMap.set(sentMessage.id._serialized, recipientId);
-        fireWebhook(sentMessage.id._serialized, recipientId, recipientNumber, recipientName, message, media);
+        fireWebhook(sentMessage.id._serialized, botNumber, botName, message, media);
         return;
     }
 
@@ -308,7 +296,7 @@ async function handleForwardOutgoingMedia(
             caption: buildSenderHeader(recipientName, recipientNumber, "document"),
         });
         replyMap.set(sentMessage.id._serialized, recipientId);
-        fireWebhook(sentMessage.id._serialized, recipientId, recipientNumber, recipientName, message, media);
+        fireWebhook(sentMessage.id._serialized, botNumber, botName, message, media);
         return;
     }
 
@@ -347,7 +335,7 @@ async function handleForwardOutgoingMedia(
     });
 
     replyMap.set(sentMessage.id._serialized, recipientId);
-    fireWebhook(sentMessage.id._serialized, recipientId, recipientNumber, recipientName, message, sendMedia);
+    fireWebhook(sentMessage.id._serialized, botNumber, botName, message, sendMedia);
     log.bot(`replyMap set | msgId: ${sentMessage.id._serialized} → ${recipientId}`);
 }
 
@@ -355,20 +343,19 @@ async function handleForwardOutgoingMedia(
 /** PRIVATE WEBHOOK */
 function fireWebhook(
     sentMessageId: string,
-    senderId: string,
-    senderNumber: string,
-    senderName: string,
+    from: string,
+    name: string,
     message: Message,
-    media?: { data: string; mimetype: string; filename?: string | null }
+    media?: { data: string; mimetype: string; filename?: string | null },
 ): void {
     sendWebhook({
         id: sentMessageId,
-        from: senderId,
-        senderName,
-        senderNumber,
+        from: from,
+        name: name,
         body: message.body ?? null,
         type: message.type,
         timestamp: message.timestamp,
+        isFromMe: message.fromMe,
         ...(media && {
             mediaBase64: media.data,
             mimetype: media.mimetype,

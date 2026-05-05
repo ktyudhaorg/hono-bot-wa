@@ -25,7 +25,8 @@ export class WhatsAppEventHandler {
             this.state.isReady = true;
             this.state.isInitializing = false;
             this.state.botNumber = client.info.wid.user;
-            log.bot(`client ready | nomor: ${this.state.botNumber}`);
+            this.state.botName = client.info.pushname ?? null;
+            log.bot(`client ready | nomor: ${this.state.botNumber} | nama: ${this.state.botName}`);
         });
 
         client.on("authenticated", () => {

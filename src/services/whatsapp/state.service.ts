@@ -2,6 +2,7 @@ export interface WhatsAppState {
     isReady: boolean;
     isInitializing: boolean;
     botNumber: string | null;
+    botName: string | null;
 }
 
 export function createInitialState(): WhatsAppState {
@@ -9,5 +10,6 @@ export function createInitialState(): WhatsAppState {
         isReady: false,
         isInitializing: false,
         botNumber: null,
+        botName: null,
     };
 }
