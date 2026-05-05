@@ -1,9 +1,6 @@
 import { Message, MessageTypes, MessageMedia } from "whatsapp-web.js";
+import { log, safeBody, safeString, compressImage, compressVideo, buildSenderHeader, sendHeaderMessage } from "@/helpers/index";
 import { whatsappService } from "@/services/whatsapp";
-import { compressImage, compressVideo } from "@/helpers/media";
-import { safeBody, safeString } from "@/helpers/general";
-import { log } from "@/helpers/logger";
-import { buildSenderHeader, sendHeaderMessage } from "@/helpers/whatsapp";
 import { sendWebhook } from "@/services/whatsapp/webhook/index.service";
 
 const MAX_SIZE_VIDEO = 16; // MB
@@ -216,6 +213,142 @@ async function handleForwardMedia(
     /** WEBHOOK */
     fireWebhook(sentMessage.id._serialized, senderId, senderNumber, senderName, message, sendMedia);
     log.bot(`replyMap set | msgId: ${sentMessage.id._serialized} → ${senderId}`);
+}
+
+export async function handleForwardOutgoingToGroup(
+    message: Message,
+    redirectGroupId: string,
+    replyMap: Map<string, string>
+): Promise<void> {
+    if (!message.body && !message.hasMedia && !message.location) {
+        log.bot(`skip empty/system message | to: ${message.to} | type: ${message.type}`);
+        return;
+    }
+
+    const recipientId = message.to;
+    const contact = await whatsappService.getContactById(recipientId);
+
+    const recipientName = contact.pushname || contact.name || contact.number || recipientId;
+    const recipientNumber = contact.id.user || contact.number || recipientId;
+    const type = message.type as string;
+
+    log.bot(`forwarding outgoing to group | to: ${recipientName} (${recipientNumber}) | type: ${type}`);
+
+    if (type === MessageTypes.LOCATION || type === "live_location") {
+        await handleForwardLocation(message, recipientId, recipientName, recipientNumber, type, redirectGroupId, replyMap);
+        return;
+    }
+
+    if (message.hasMedia) {
+        await handleForwardOutgoingMedia(message, recipientId, recipientName, recipientNumber, redirectGroupId, replyMap);
+        return;
+    }
+
+    const textMessage =
+        `*Pesan Keluar*\n\n` +
+        `*Ke*: ${recipientName}\n` +
+        `*Nomor*: +${recipientNumber}\n\n` +
+        `*Pesan*:\n${safeBody(message.body)}`;
+
+    log.send(`sending outgoing text to group | to: ${redirectGroupId} | recipient: ${recipientId}`);
+    const sentMessage = await whatsappService.sendMessage(redirectGroupId, safeString(textMessage));
+
+    sendWebhook({
+        id: sentMessage.id._serialized,
+        from: recipientId,
+        senderName: recipientName,
+        senderNumber: recipientNumber,
+        body: message.body ?? null,
+        type,
+        timestamp: message.timestamp,
+    }).catch(err => log.error("webhook failed:", err));
+
+    replyMap.set(sentMessage.id._serialized, recipientId);
+    log.bot(`replyMap set | msgId: ${sentMessage.id._serialized} → ${recipientId}`);
+}
+
+async function handleForwardOutgoingMedia(
+    message: Message,
+    recipientId: string,
+    recipientName: string,
+    recipientNumber: string,
+    redirectGroupId: string,
+    replyMap: Map<string, string>
+): Promise<void> {
+    const type = message.type;
+    log.media(`outgoing media | to: ${recipientId} | type: ${type}`);
+
+    const media = await message.downloadMedia();
+    if (!media?.data || !media?.mimetype) {
+        log.warn(`media invalid, skip | to: ${recipientId} | type: ${type}`);
+        return;
+    }
+
+    let sendMedia = media;
+
+    if (type === "sticker") {
+        await sendHeaderMessage(redirectGroupId, recipientName, recipientNumber, "sticker");
+        const sentMessage = await whatsappService.sendMessage(redirectGroupId, media, { sendMediaAsSticker: true });
+        replyMap.set(sentMessage.id._serialized, recipientId);
+        fireWebhook(sentMessage.id._serialized, recipientId, recipientNumber, recipientName, message, media);
+        return;
+    }
+
+    if (type === "audio" || type === "ptt") {
+        await sendHeaderMessage(redirectGroupId, recipientName, recipientNumber, type);
+        const sentMessage = await whatsappService.sendMessage(redirectGroupId, media, { sendAudioAsVoice: type === "ptt" });
+        replyMap.set(sentMessage.id._serialized, recipientId);
+        fireWebhook(sentMessage.id._serialized, recipientId, recipientNumber, recipientName, message, media);
+        return;
+    }
+
+    if (type === "document") {
+        const sentMessage = await whatsappService.sendMessage(redirectGroupId, media, {
+            sendMediaAsDocument: true,
+            caption: buildSenderHeader(recipientName, recipientNumber, "document"),
+        });
+        replyMap.set(sentMessage.id._serialized, recipientId);
+        fireWebhook(sentMessage.id._serialized, recipientId, recipientNumber, recipientName, message, media);
+        return;
+    }
+
+    if (type === "image") {
+        const compressed = await compressImage(media.data);
+        sendMedia = new MessageMedia("image/jpeg", compressed, "image.jpg");
+    }
+
+    if (type === "video") {
+        const sizeMB = Buffer.from(media.data, "base64").length / 1024 / 1024;
+        if (sizeMB <= MAX_SIZE_VIDEO) {
+            const compressed = await compressVideo(media.data);
+            sendMedia = new MessageMedia("video/mp4", compressed, "video.mp4");
+        } else {
+            log.warn(`video too large, skip compress | size: ${sizeMB.toFixed(2)} MB | to: ${recipientId}`);
+        }
+    }
+
+    if (!sendMedia?.data || !sendMedia?.mimetype) {
+        log.warn(`sendMedia invalid after processing | to: ${recipientId} | type: ${type}`);
+        return;
+    }
+
+    const bodyText = typeof message.body === "string" && message.body.length < 300 ? message.body : "";
+    const caption =
+        `*Pesan Media Keluar*\n\n` +
+        `*Ke*: ${recipientName}\n` +
+        `*Nomor*: +${recipientNumber}\n\n` +
+        `*Tipe*: ${type.toUpperCase()}\n\n` +
+        (bodyText ? `*Caption*:\n${safeBody(bodyText)}` : "");
+
+    log.send(`sending outgoing media to group | type: ${type} | to: ${redirectGroupId}`);
+    const sentMessage = await whatsappService.sendMessage(redirectGroupId, sendMedia, {
+        caption: safeString(caption),
+        sendMediaAsDocument: type === "video",
+    });
+
+    replyMap.set(sentMessage.id._serialized, recipientId);
+    fireWebhook(sentMessage.id._serialized, recipientId, recipientNumber, recipientName, message, sendMedia);
+    log.bot(`replyMap set | msgId: ${sentMessage.id._serialized} → ${recipientId}`);
 }
 
 

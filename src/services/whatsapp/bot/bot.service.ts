@@ -5,7 +5,7 @@ import { log } from "@/helpers/logger";
 
 import { BotContext, CommandMap } from "@/context/bot-type.context";
 import { handleAutoReply } from "@/helpers/whatsapp";
-import { handleForwardToGroup } from "@/services/whatsapp/bot/forward-message.service";
+import { handleForwardToGroup, handleForwardOutgoingToGroup } from "@/services/whatsapp/bot/forward-message.service";
 import { handleGroupReply } from "@/services/whatsapp/bot/reply-from-group.service";
 import {
     registerInfoCommands,
@@ -45,13 +45,27 @@ export class WhatsAppBotService {
         log.bot(`message received | from: ${from} | type: ${type} | body: "${preview}"`);
 
         try {
+            const body = safeBody(message.body, "");
+
             if (from === this.ctx.whatsappRedirectGroupId) {
                 log.bot(`routing to handleGroupReply | from: ${from}`);
                 await handleGroupReply(message, this.ctx.replyMap);
                 return;
             }
 
-            const body = safeBody(message.body, "");
+            if (message.fromMe && !message.isStatus) {
+                if (body.startsWith(this.ctx.prefix)) {
+                    log.cmd(`routing to handleCommand (fromMe) | body: "${body.slice(0, 30)}"`);
+                    await this.handleCommand(message, body);
+                }
+
+                if (this.ctx.whatsappRedirectGroupId) {
+                    log.bot(`routing to handleForwardOutgoingToGroup | to: ${message.to}`);
+                    await handleForwardOutgoingToGroup(message, this.ctx.whatsappRedirectGroupId, this.ctx.replyMap);
+                }
+                return;
+            }
+
             if (body.startsWith(this.ctx.prefix)) {
                 log.cmd(`routing to handleCommand | body: "${body.slice(0, 30)}"`);
                 await this.handleCommand(message, body);
