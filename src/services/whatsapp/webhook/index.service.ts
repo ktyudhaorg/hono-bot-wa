@@ -5,7 +5,7 @@ const WEBHOOK_URL = process.env.WHATSAPP_WEBHOOK_URL;
 
 export interface WebhookPayload {
     id: string;
-    from: string;
+    number: string;
     name: string;
     body: string | null;
     type: string;
@@ -36,7 +36,7 @@ export async function sendWebhook(payload: WebhookPayload): Promise<void> {
 
     const body: Record<string, any> = {
         id: payload.id,
-        from: payload.from,
+        number: payload.number,
         name: payload.name,
         content_type: contentType,
         message: payload.body ?? "",
