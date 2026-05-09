@@ -2,8 +2,11 @@ import { Message, MessageTypes, MessageMedia } from "whatsapp-web.js";
 import { log, safeBody, safeString, compressImage, compressVideo, buildSenderHeader, sendHeaderMessage } from "@/helpers";
 import { whatsappService } from "@/services/whatsapp";
 import { sendWebhook } from "@/services/whatsapp/webhook/index.service";
+import { telegramMessageService } from "@/services/telegram/telegram.message.service";
+import { telegramService } from "@/services/telegram/telegram.service";
 
 const MAX_SIZE_VIDEO = 16; // MB
+const TELEGRAM_REDIRECT_CHAT_ID = process.env.TELEGRAM_REDIRECT_CHAT_ID;
 
 export async function handleForwardToGroup(
     message: Message,
@@ -31,7 +34,11 @@ export async function handleForwardToGroup(
 
     if (message.hasMedia) {
         log.media(`handling media forward | type: ${type} | from: ${senderId}`);
-        await handleForwardMedia(message, senderId, senderName, senderNumber, redirectGroupId, replyMap);
+        const media = await handleForwardMedia(message, senderId, senderName, senderNumber, redirectGroupId, replyMap);
+
+        /** SEND TELEGRAM */
+        await forwardToTelegram({ message, senderName, senderNumber, media: media ?? undefined });
+
         return;
     }
 
@@ -43,6 +50,8 @@ export async function handleForwardToGroup(
 
     log.send(`sending text to group | to: ${redirectGroupId} | from: ${senderId}`);
     const sentMessage = await whatsappService.sendMessage(redirectGroupId, safeString(textMessage));
+    /** SEND TELEGRAM */
+    await forwardToTelegram({ message, senderName, senderNumber });
 
     /** WEBHOOK */
     fireWebhook(sentMessage.id._serialized, senderNumber, senderName, message);
@@ -108,7 +117,7 @@ async function handleForwardMedia(
     senderNumber: string,
     redirectGroupId: string,
     replyMap: Map<string, string>
-): Promise<void> {
+): Promise<{ data: string; mimetype: string; filename?: string | null } | null> {
     const type = message.type;
     log.media(`start | from: ${senderId} | type: ${type}`);
 
@@ -117,7 +126,7 @@ async function handleForwardMedia(
 
     if (!media?.data || !media?.mimetype) {
         log.warn(`media invalid, skip | from: ${senderId} | type: ${type}`);
-        return;
+        return media;
     }
 
     let sendMedia = media;
@@ -130,7 +139,7 @@ async function handleForwardMedia(
         replyMap.set(sentMessage.id._serialized, senderId);
 
         fireWebhook(sentMessage.id._serialized, senderNumber, senderName, message, media);
-        return;
+        return media;
     }
 
     if (type === "audio" || type === "ptt") {
@@ -141,7 +150,7 @@ async function handleForwardMedia(
         replyMap.set(sentMessage.id._serialized, senderId);
 
         fireWebhook(sentMessage.id._serialized, senderNumber, senderName, message, media);
-        return;
+        return media;
     }
 
     if (type === "document") {
@@ -154,7 +163,7 @@ async function handleForwardMedia(
         replyMap.set(sentMessage.id._serialized, senderId);
 
         fireWebhook(sentMessage.id._serialized, senderNumber, senderName, message, media);
-        return;
+        return media;
     }
 
     if (type === "image") {
@@ -180,7 +189,7 @@ async function handleForwardMedia(
 
     if (!sendMedia?.data || !sendMedia?.mimetype) {
         log.warn(`sendMedia invalid after processing, skip | from: ${senderId} | type: ${type}`);
-        return;
+        return null;
     }
 
     const bodyText =
@@ -205,6 +214,8 @@ async function handleForwardMedia(
     /** WEBHOOK */
     fireWebhook(sentMessage.id._serialized, senderNumber, senderName, message, sendMedia);
     log.bot(`replyMap set | msgId: ${sentMessage.id._serialized} → ${senderId}`);
+
+    return media;
 }
 
 export async function handleForwardOutgoingToGroup(
@@ -334,6 +345,59 @@ async function handleForwardOutgoingMedia(
     replyMap.set(sentMessage.id._serialized, recipientId);
     fireWebhook(sentMessage.id._serialized, recipientNumber, recipientName, message, sendMedia);
     log.bot(`replyMap set | msgId: ${sentMessage.id._serialized} → ${recipientId}`);
+}
+
+export async function forwardToTelegram(params: {
+    message: Message;
+    senderName: string;
+    senderNumber: string;
+    media?: { data: string; mimetype: string; filename?: string | null };
+}): Promise<void> {
+    if (!TELEGRAM_REDIRECT_CHAT_ID) return;
+
+    const { message, senderName, senderNumber, media } = params;
+    const header = `*${senderName}* (+${senderNumber})`;
+
+    try {
+        // location
+        if (message.location) {
+            const { latitude, longitude, description } = message.location;
+            await telegramService.bot.sendLocation(
+                TELEGRAM_REDIRECT_CHAT_ID,
+                parseFloat(latitude),
+                parseFloat(longitude)
+            );
+            await telegramMessageService.send({
+                to: TELEGRAM_REDIRECT_CHAT_ID,
+                message: `${header}\nMengirim lokasi${description ? `\n${description}` : ""}`,
+            });
+            return;
+        }
+
+        // media — pakai yang sudah di-download, fallback download ulang kalau tidak ada
+        const mediaData = media ?? (message.hasMedia ? await message.downloadMedia() : null);
+        if (mediaData) {
+            const buffer = Buffer.from(mediaData.data, "base64");
+            const ext = mediaData.mimetype.split("/")[1]?.split(";")[0] ?? "bin";
+            await telegramMessageService.sendWithBuffer({
+                to: TELEGRAM_REDIRECT_CHAT_ID,
+                fileBuffer: buffer,
+                fileName: mediaData.filename ?? `file.${ext}`,
+                fileType: mediaData.mimetype,
+                caption: `${header}\n${message.body || ""}`.trim(),
+            });
+            return;
+        }
+
+        // teks biasa
+        await telegramMessageService.send({
+            to: TELEGRAM_REDIRECT_CHAT_ID,
+            message: `${header}\n${message.body || "(no text)"}`,
+        });
+
+    } catch (err) {
+        log.error(`forwardToTelegram failed | from: ${senderNumber}`, err);
+    }
 }
 
 
