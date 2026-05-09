@@ -375,9 +375,9 @@ export async function forwardToTelegram(params: {
     const label = direction === "incoming" ? "Pesan Masuk" : "Pesan Keluar";
 
     const header =
-        `${label}\n` +
+        `${label}\n\n` +
         `Dari: ${senderName}\n` +
-        `Nomor: +${senderNumber}`;
+        `Nomor: +${senderNumber}\n\n`;
 
     try {
         // location
@@ -406,7 +406,7 @@ export async function forwardToTelegram(params: {
                 fileName: mediaData.filename ?? `file.${ext}`,
                 fileType: mediaData.mimetype,
                 caption:
-                    `${header}\n` +
+                    `${header}` +
                     `Tipe: ${message.type}\n` +
                     `Pesan:\n${message.body ? `\n${message.body}` : ""}`.trim(),
             });
@@ -417,7 +417,7 @@ export async function forwardToTelegram(params: {
         await telegramMessageService.send({
             to: TELEGRAM_REDIRECT_CHAT_ID,
             message:
-                `${header}\n` +
+                `${header}` +
                 `Pesan:\n${message.body}`
         });
 
