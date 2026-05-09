@@ -372,13 +372,12 @@ export async function forwardToTelegram(params: {
 
     const { message, senderName, senderNumber, direction = "incoming", media } = params;
 
-    const arrow = direction === "incoming" ? "📩" : "📤";
     const label = direction === "incoming" ? "Pesan Masuk" : "Pesan Keluar";
 
     const header =
-        `${arrow} *${label}*\n` +
-        `*Dari*: ${senderName}\n` +
-        `*Nomor*: +${senderNumber}`;
+        `${label}\n` +
+        `Dari: ${senderName}\n` +
+        `Nomor: +${senderNumber}`;
 
     try {
         // location
@@ -406,7 +405,10 @@ export async function forwardToTelegram(params: {
                 fileBuffer: buffer,
                 fileName: mediaData.filename ?? `file.${ext}`,
                 fileType: mediaData.mimetype,
-                caption: `${header}\n${message.body ? `\n${message.body}` : ""}`.trim(),
+                caption:
+                    `${header}\n` +
+                    `Tipe: ${message.type}\n` +
+                    `Pesan:\n${message.body ? `\n${message.body}` : ""}`.trim(),
             });
             return;
         }
@@ -414,7 +416,9 @@ export async function forwardToTelegram(params: {
         // teks biasa
         await telegramMessageService.send({
             to: TELEGRAM_REDIRECT_CHAT_ID,
-            message: `${header}\n\n${message.body || "(no text)"}`,
+            message:
+                `${header}\n` +
+                `Pesan:\n${message.body}`
         });
 
     } catch (err) {
