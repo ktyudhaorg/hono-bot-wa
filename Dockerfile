@@ -37,6 +37,7 @@ COPY package.json bun.lockb* ./
 
 # Install dependencies
 RUN bun install
+RUN sed -i 's/if (!fileOptions.contentType)/if (false)/' /app/node_modules/node-telegram-bot-api/src/utils.js
 
 # Salin semua source code
 COPY . .
