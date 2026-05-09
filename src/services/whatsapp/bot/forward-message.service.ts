@@ -28,7 +28,7 @@ export async function handleForwardToGroup(
 
     if (type === MessageTypes.LOCATION || type === "live_location") {
         log.bot(`handling location forward | type: ${type} | from: ${senderId}`);
-        await handleForwardLocation(message, senderId, senderName, senderNumber, type, redirectGroupId, replyMap);
+        await handleForwardLocation(message, senderId, senderName, senderNumber, type, redirectGroupId, replyMap, undefined, "incoming");
         return;
     }
 
@@ -37,7 +37,7 @@ export async function handleForwardToGroup(
         const media = await handleForwardMedia(message, senderId, senderName, senderNumber, redirectGroupId, replyMap);
 
         /** SEND TELEGRAM */
-        await forwardToTelegram({ message, senderName, senderNumber, media: media ?? undefined });
+        await forwardToTelegram({ message, senderName, senderNumber, media: media ?? undefined, direction: "incoming" });
 
         return;
     }
@@ -51,7 +51,7 @@ export async function handleForwardToGroup(
     log.send(`sending text to group | to: ${redirectGroupId} | from: ${senderId}`);
     const sentMessage = await whatsappService.sendMessage(redirectGroupId, safeString(textMessage));
     /** SEND TELEGRAM */
-    await forwardToTelegram({ message, senderName, senderNumber });
+    await forwardToTelegram({ message, senderName, senderNumber, direction: "incoming" });
 
     /** WEBHOOK */
     fireWebhook(sentMessage.id._serialized, senderNumber, senderName, message);
@@ -68,7 +68,8 @@ async function handleForwardLocation(
     type: string,
     redirectGroupId: string,
     replyMap: Map<string, string>,
-    liveLocationMap?: Map<string, { lastUpdate: number; groupMessageId: string }>
+    liveLocationMap?: Map<string, { lastUpdate: number; groupMessageId: string }>,
+    direction: "incoming" | "outgoing" = "incoming"
 ): Promise<void> {
     const loc = message.location;
     if (!loc) {
@@ -96,6 +97,9 @@ async function handleForwardLocation(
         log.bot(`live location update | from: ${senderId} | lastUpdate: ${existing.lastUpdate}`);
         await whatsappService.sendMessage(redirectGroupId, safeString(`*Update Lokasi*\n\n${text}`));
         existing.lastUpdate = now;
+
+        /** SEND TELEGRAM */
+        await forwardToTelegram({ message, senderName, senderNumber, direction });
         return;
     }
 
@@ -103,6 +107,8 @@ async function handleForwardLocation(
     const sentMessage = await whatsappService.sendMessage(redirectGroupId, safeString(text));
     replyMap.set(sentMessage.id._serialized, senderId);
     log.bot(`replyMap set | msgId: ${sentMessage.id._serialized} → ${senderId}`);
+
+    await forwardToTelegram({ message, senderName, senderNumber, direction });
 
     if (isLive && liveLocationMap) {
         liveLocationMap.set(senderId, { lastUpdate: now, groupMessageId: sentMessage.id._serialized });
@@ -238,12 +244,15 @@ export async function handleForwardOutgoingToGroup(
     log.bot(`forwarding outgoing to group | to: ${recipientName} (${recipientNumber}) | type: ${type}`);
 
     if (type === MessageTypes.LOCATION || type === "live_location") {
-        await handleForwardLocation(message, recipientId, recipientName, recipientNumber, type, redirectGroupId, replyMap);
+        await handleForwardLocation(message, recipientId, recipientName, recipientNumber, type, redirectGroupId, replyMap, undefined, "outgoing");
         return;
     }
 
     if (message.hasMedia) {
-        await handleForwardOutgoingMedia(message, recipientId, recipientName, recipientNumber, redirectGroupId, replyMap);
+        const media = await handleForwardOutgoingMedia(message, recipientId, recipientName, recipientNumber, redirectGroupId, replyMap);
+        /** SEND TELEGRAM */
+        await forwardToTelegram({ message, senderName: recipientName, senderNumber: recipientNumber, media: media ?? undefined, direction: "outgoing" });
+
         return;
     }
 
@@ -255,6 +264,9 @@ export async function handleForwardOutgoingToGroup(
 
     log.send(`sending outgoing text to group | to: ${redirectGroupId} | recipient: ${recipientId}`);
     const sentMessage = await whatsappService.sendMessage(redirectGroupId, safeString(textMessage));
+
+    /** SEND TELEGRAM */
+    await forwardToTelegram({ message, senderName: recipientName, senderNumber: recipientNumber, direction: "outgoing" });
 
     /** WEBHOOK */
     fireWebhook(sentMessage.id._serialized, recipientNumber, recipientName, message);
@@ -270,14 +282,14 @@ async function handleForwardOutgoingMedia(
     recipientNumber: string,
     redirectGroupId: string,
     replyMap: Map<string, string>
-): Promise<void> {
+): Promise<{ data: string; mimetype: string; filename?: string | null } | null> {
     const type = message.type;
     log.media(`outgoing media | to: ${recipientId} | type: ${type}`);
 
     const media = await message.downloadMedia();
     if (!media?.data || !media?.mimetype) {
         log.warn(`media invalid, skip | to: ${recipientId} | type: ${type}`);
-        return;
+        return media;
     }
 
     let sendMedia = media;
@@ -287,7 +299,7 @@ async function handleForwardOutgoingMedia(
         const sentMessage = await whatsappService.sendMessage(redirectGroupId, media, { sendMediaAsSticker: true });
         replyMap.set(sentMessage.id._serialized, recipientId);
         fireWebhook(sentMessage.id._serialized, recipientNumber, recipientName, message, media);
-        return;
+        return media;
     }
 
     if (type === "audio" || type === "ptt") {
@@ -295,7 +307,7 @@ async function handleForwardOutgoingMedia(
         const sentMessage = await whatsappService.sendMessage(redirectGroupId, media, { sendAudioAsVoice: type === "ptt" });
         replyMap.set(sentMessage.id._serialized, recipientId);
         fireWebhook(sentMessage.id._serialized, recipientNumber, recipientName, message, media);
-        return;
+        return media;
     }
 
     if (type === "document") {
@@ -305,7 +317,7 @@ async function handleForwardOutgoingMedia(
         });
         replyMap.set(sentMessage.id._serialized, recipientId);
         fireWebhook(sentMessage.id._serialized, recipientNumber, recipientName, message, media);
-        return;
+        return media;
     }
 
     if (type === "image") {
@@ -325,7 +337,7 @@ async function handleForwardOutgoingMedia(
 
     if (!sendMedia?.data || !sendMedia?.mimetype) {
         log.warn(`sendMedia invalid after processing | to: ${recipientId} | type: ${type}`);
-        return;
+        return null;
     }
 
     const bodyText = typeof message.body === "string" && message.body.length < 300 ? message.body : "";
@@ -345,18 +357,28 @@ async function handleForwardOutgoingMedia(
     replyMap.set(sentMessage.id._serialized, recipientId);
     fireWebhook(sentMessage.id._serialized, recipientNumber, recipientName, message, sendMedia);
     log.bot(`replyMap set | msgId: ${sentMessage.id._serialized} → ${recipientId}`);
+
+    return media;
 }
 
 export async function forwardToTelegram(params: {
     message: Message;
     senderName: string;
     senderNumber: string;
+    direction?: "incoming" | "outgoing";
     media?: { data: string; mimetype: string; filename?: string | null };
 }): Promise<void> {
     if (!TELEGRAM_REDIRECT_CHAT_ID) return;
 
-    const { message, senderName, senderNumber, media } = params;
-    const header = `*${senderName}* (+${senderNumber})`;
+    const { message, senderName, senderNumber, direction = "incoming", media } = params;
+
+    const arrow = direction === "incoming" ? "📩" : "📤";
+    const label = direction === "incoming" ? "Pesan Masuk" : "Pesan Keluar";
+
+    const header =
+        `${arrow} *${label}*\n` +
+        `*Dari*: ${senderName}\n` +
+        `*Nomor*: +${senderNumber}`;
 
     try {
         // location
@@ -374,7 +396,7 @@ export async function forwardToTelegram(params: {
             return;
         }
 
-        // media — pakai yang sudah di-download, fallback download ulang kalau tidak ada
+        // media
         const mediaData = media ?? (message.hasMedia ? await message.downloadMedia() : null);
         if (mediaData) {
             const buffer = Buffer.from(mediaData.data, "base64");
@@ -384,7 +406,7 @@ export async function forwardToTelegram(params: {
                 fileBuffer: buffer,
                 fileName: mediaData.filename ?? `file.${ext}`,
                 fileType: mediaData.mimetype,
-                caption: `${header}\n${message.body || ""}`.trim(),
+                caption: `${header}\n${message.body ? `\n${message.body}` : ""}`.trim(),
             });
             return;
         }
@@ -392,7 +414,7 @@ export async function forwardToTelegram(params: {
         // teks biasa
         await telegramMessageService.send({
             to: TELEGRAM_REDIRECT_CHAT_ID,
-            message: `${header}\n${message.body || "(no text)"}`,
+            message: `${header}\n\n${message.body || "(no text)"}`,
         });
 
     } catch (err) {
